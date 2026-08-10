@@ -41,6 +41,13 @@ function Dashboard() {
   const [fromDate, setFromDate] = useState(defaultFrom);
   const [toDate, setToDate] = useState(defaultTo);
 
+  // --------------------------------------------------
+  // Available months for selected member
+  // --------------------------------------------------
+
+  const [availableMonths, setAvailableMonths] =
+    useState([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -76,6 +83,7 @@ function Dashboard() {
 
     if (member.role === "Super Admin") {
       await fetchAllMembers();
+
       setSelectedMember("");
     }
 
@@ -84,9 +92,13 @@ function Dashboard() {
     // ------------------------------------------------
 
     else if (member.role === "Admin") {
-      await fetchTeamMembers(member.member_id);
+      await fetchTeamMembers(
+        member.member_id
+      );
 
-      setSelectedMember(member.member_id);
+      setSelectedMember(
+        member.member_id
+      );
     }
 
     // ------------------------------------------------
@@ -94,7 +106,9 @@ function Dashboard() {
     // ------------------------------------------------
 
     else {
-      setSelectedMember(member.member_id);
+      setSelectedMember(
+        member.member_id
+      );
     }
 
     setLoading(false);
@@ -110,7 +124,10 @@ function Dashboard() {
       .select(
         "member_id, name, email, role, auth_user_id, team_lead"
       )
-      .eq("auth_user_id", user.id)
+      .eq(
+        "auth_user_id",
+        user.id
+      )
       .single();
 
     if (error) {
@@ -158,7 +175,9 @@ function Dashboard() {
   // Own record + team members
   // --------------------------------------------------
 
-  async function fetchTeamMembers(teamLeadId) {
+  async function fetchTeamMembers(
+    teamLeadId
+  ) {
     const { data, error } = await supabase
       .from("members")
       .select(
@@ -201,7 +220,9 @@ function Dashboard() {
         error
       );
 
-      setError("Unable to load KPIs.");
+      setError(
+        "Unable to load KPIs."
+      );
 
       return;
     }
@@ -218,8 +239,9 @@ function Dashboard() {
     const visibleKPIs = (data || [])
       .filter(
         (kpi) =>
-          String(kpi.status || "")
-            .toLowerCase() !== "hidden"
+          String(
+            kpi.status || ""
+          ).toLowerCase() !== "hidden"
       )
       .sort((a, b) => {
         const aStatus = String(
@@ -231,18 +253,32 @@ function Dashboard() {
         ).toLowerCase();
 
         const aPriority =
-          aStatus === "priority" ? 0 : 1;
+          aStatus === "priority"
+            ? 0
+            : 1;
 
         const bPriority =
-          bStatus === "priority" ? 0 : 1;
+          bStatus === "priority"
+            ? 0
+            : 1;
 
-        if (aPriority !== bPriority) {
-          return aPriority - bPriority;
+        if (
+          aPriority !==
+          bPriority
+        ) {
+          return (
+            aPriority -
+            bPriority
+          );
         }
 
         return (
-          Number(a.sort_order || 0) -
-          Number(b.sort_order || 0)
+          Number(
+            a.sort_order || 0
+          ) -
+          Number(
+            b.sort_order || 0
+          )
         );
       });
 
@@ -256,6 +292,7 @@ function Dashboard() {
   useEffect(() => {
     if (!selectedMember) {
       setScores([]);
+      setAvailableMonths([]);
       return;
     }
 
@@ -270,7 +307,10 @@ function Dashboard() {
   // Convert month/year to comparable number
   // --------------------------------------------------
 
-  function monthKey(month, year) {
+  function monthKey(
+    month,
+    year
+  ) {
     return (
       Number(year) * 12 +
       Number(month)
@@ -282,12 +322,18 @@ function Dashboard() {
   // --------------------------------------------------
 
   async function loadScores() {
-    const { data, error } = await supabase
-      .from("monthly_kpi_scores")
-      .select(
-        "id, member_id, kpi_id, month, year, value, remarks"
-      )
-      .eq("member_id", selectedMember);
+    const { data, error } =
+      await supabase
+        .from(
+          "monthly_kpi_scores"
+        )
+        .select(
+          "id, member_id, kpi_id, month, year, value, remarks"
+        )
+        .eq(
+          "member_id",
+          selectedMember
+        );
 
     if (error) {
       console.error(
@@ -302,138 +348,417 @@ function Dashboard() {
       return;
     }
 
-    const fromKey = monthKey(
-      fromDate.month,
-      fromDate.year
+    const memberScores =
+      data || [];
+
+    // ------------------------------------------------
+    // Determine months that actually have values
+    // ------------------------------------------------
+
+    const monthMap =
+      new Map();
+
+    memberScores.forEach(
+      (score) => {
+        if (
+          score.month ===
+            null ||
+          score.year ===
+            null ||
+          score.value ===
+            null ||
+          score.value ===
+            ""
+        ) {
+          return;
+        }
+
+        const key = monthKey(
+          score.month,
+          score.year
+        );
+
+        if (
+          !monthMap.has(key)
+        ) {
+          monthMap.set(key, {
+            month:
+              Number(
+                score.month
+              ),
+            year:
+              Number(
+                score.year
+              ),
+          });
+        }
+      }
     );
 
-    const toKey = monthKey(
-      toDate.month,
-      toDate.year
+    // ------------------------------------------------
+    // Sort available months
+    // Newest first
+    // ------------------------------------------------
+
+    const sortedMonths =
+      Array.from(
+        monthMap.values()
+      ).sort((a, b) => {
+        return (
+          monthKey(
+            b.month,
+            b.year
+          ) -
+          monthKey(
+            a.month,
+            a.year
+          )
+        );
+      });
+
+    setAvailableMonths(
+      sortedMonths
     );
 
-    if (fromKey > toKey) {
+    // ------------------------------------------------
+    // If there are no scored months
+    // ------------------------------------------------
+
+    if (
+      sortedMonths.length ===
+      0
+    ) {
+      setScores([]);
+      return;
+    }
+
+    // ------------------------------------------------
+    // Make sure From and To are valid
+    // for the selected member
+    // ------------------------------------------------
+
+    const availableKeys =
+      new Set(
+        sortedMonths.map(
+          (date) =>
+            monthKey(
+              date.month,
+              date.year
+            )
+        )
+      );
+
+    let adjustedFrom =
+      fromDate;
+
+    let adjustedTo =
+      toDate;
+
+    const currentFromKey =
+      monthKey(
+        fromDate.month,
+        fromDate.year
+      );
+
+    const currentToKey =
+      monthKey(
+        toDate.month,
+        toDate.year
+      );
+
+    // ------------------------------------------------
+    // If current To date has no data,
+    // use the newest available month
+    // ------------------------------------------------
+
+    if (
+      !availableKeys.has(
+        currentToKey
+      )
+    ) {
+      adjustedTo =
+        sortedMonths[0];
+    }
+
+    // ------------------------------------------------
+    // If current From date has no data,
+    // find the oldest available month that
+    // is still within the intended range.
+    // Otherwise use the oldest available month.
+    // ------------------------------------------------
+
+    if (
+      !availableKeys.has(
+        currentFromKey
+      )
+    ) {
+      const validFromMonth =
+        sortedMonths
+          .filter(
+            (date) =>
+              monthKey(
+                date.month,
+                date.year
+              ) <=
+              monthKey(
+                adjustedTo.month,
+                adjustedTo.year
+              )
+          )
+          .at(-1);
+
+      adjustedFrom =
+        validFromMonth ||
+        sortedMonths[
+          sortedMonths.length - 1
+        ];
+    }
+
+    // ------------------------------------------------
+    // Prevent invalid range
+    // ------------------------------------------------
+
+    if (
+      monthKey(
+        adjustedFrom.month,
+        adjustedFrom.year
+      ) >
+      monthKey(
+        adjustedTo.month,
+        adjustedTo.year
+      )
+    ) {
+      adjustedFrom =
+        adjustedTo;
+    }
+
+    // ------------------------------------------------
+    // Only update state if necessary
+    // ------------------------------------------------
+
+    if (
+      fromDate.month !==
+        adjustedFrom.month ||
+      fromDate.year !==
+        adjustedFrom.year
+    ) {
+      setFromDate(
+        adjustedFrom
+      );
+    }
+
+    if (
+      toDate.month !==
+        adjustedTo.month ||
+      toDate.year !==
+        adjustedTo.year
+    ) {
+      setToDate(
+        adjustedTo
+      );
+    }
+
+    // ------------------------------------------------
+    // Filter scores by date range
+    // ------------------------------------------------
+
+    const fromKey =
+      monthKey(
+        adjustedFrom.month,
+        adjustedFrom.year
+      );
+
+    const toKey =
+      monthKey(
+        adjustedTo.month,
+        adjustedTo.year
+      );
+
+    if (
+      fromKey > toKey
+    ) {
       setScores([]);
       return;
     }
 
     const filteredScores =
-      (data || []).filter((score) => {
-        const scoreKey = monthKey(
-          score.month,
-          score.year
-        );
+      memberScores.filter(
+        (score) => {
+          const scoreKey =
+            monthKey(
+              score.month,
+              score.year
+            );
 
-        return (
-          scoreKey >= fromKey &&
-          scoreKey <= toKey
-        );
-      });
+          return (
+            scoreKey >=
+              fromKey &&
+            scoreKey <=
+              toKey
+          );
+        }
+      );
 
-    setScores(filteredScores);
+    setScores(
+      filteredScores
+    );
   }
 
   // --------------------------------------------------
-  // Generate month options
+  // Generate available month options
+  //
+  // Only months with a score for the selected member
+  // are displayed.
   // --------------------------------------------------
 
-  function generateMonthOptions() {
-    const options = [];
+  function generateAvailableMonthOptions() {
+    return availableMonths.map(
+      (date) => {
+        const dateObject =
+          new Date(
+            date.year,
+            date.month - 1,
+            1
+          );
 
-    const currentYear =
-      now.getFullYear();
-
-    /*
-     * Provide a generous range:
-     * 24 months into the past
-     * 12 months into the future
-     */
-
-    const startDate = new Date(
-      currentYear,
-      now.getMonth() - 24,
-      1
+        return {
+          month:
+            date.month,
+          year:
+            date.year,
+          label:
+            dateObject.toLocaleString(
+              "default",
+              {
+                month:
+                  "long",
+              }
+            ),
+          shortLabel:
+            dateObject.toLocaleString(
+              "default",
+              {
+                month:
+                  "short",
+              }
+            ),
+          fullLabel:
+            dateObject.toLocaleString(
+              "default",
+              {
+                month:
+                  "long",
+                year:
+                  "numeric",
+              }
+            ),
+        };
+      }
     );
-
-    const endDate = new Date(
-      currentYear,
-      now.getMonth() + 12,
-      1
-    );
-
-    let date = new Date(startDate);
-
-    while (date <= endDate) {
-      options.push({
-        month: date.getMonth() + 1,
-        year: date.getFullYear(),
-        label: date.toLocaleString(
-          "default",
-          {
-            month: "long",
-          }
-        ),
-        shortLabel: date.toLocaleString(
-          "default",
-          {
-            month: "short",
-          }
-        ),
-        fullLabel: date.toLocaleString(
-          "default",
-          {
-            month: "long",
-            year: "numeric",
-          }
-        ),
-      });
-
-      date = new Date(
-        date.getFullYear(),
-        date.getMonth() + 1,
-        1
-      );
-    }
-
-    return options.reverse();
   }
 
   const monthOptions =
-    generateMonthOptions();
+    generateAvailableMonthOptions();
 
   // --------------------------------------------------
   // Handle From dropdown
   // --------------------------------------------------
 
-  function handleFromChange(event) {
-    const [year, month] =
-      event.target.value.split("-");
+  function handleFromChange(
+    event
+  ) {
+    const [
+      year,
+      month,
+    ] =
+      event.target.value.split(
+        "-"
+      );
 
-    setFromDate({
-      month: Number(month),
-      year: Number(year),
-    });
+    const newFromDate = {
+      month:
+        Number(month),
+      year:
+        Number(year),
+    };
+
+    // ----------------------------------------------
+    // Prevent From from being later than To
+    // ----------------------------------------------
+
+    if (
+      monthKey(
+        newFromDate.month,
+        newFromDate.year
+      ) >
+      monthKey(
+        toDate.month,
+        toDate.year
+      )
+    ) {
+      setToDate(
+        newFromDate
+      );
+    }
+
+    setFromDate(
+      newFromDate
+    );
   }
 
   // --------------------------------------------------
   // Handle To dropdown
   // --------------------------------------------------
 
-  function handleToChange(event) {
-    const [year, month] =
-      event.target.value.split("-");
+  function handleToChange(
+    event
+  ) {
+    const [
+      year,
+      month,
+    ] =
+      event.target.value.split(
+        "-"
+      );
 
-    setToDate({
-      month: Number(month),
-      year: Number(year),
-    });
+    const newToDate = {
+      month:
+        Number(month),
+      year:
+        Number(year),
+    };
+
+    // ----------------------------------------------
+    // Prevent To from being earlier than From
+    // ----------------------------------------------
+
+    if (
+      monthKey(
+        newToDate.month,
+        newToDate.year
+      ) <
+      monthKey(
+        fromDate.month,
+        fromDate.year
+      )
+    ) {
+      setFromDate(
+        newToDate
+      );
+    }
+
+    setToDate(
+      newToDate
+    );
   }
 
   // --------------------------------------------------
   // Current value for dropdown
   // --------------------------------------------------
 
-  function getDateValue(date) {
+  function getDateValue(
+    date
+  ) {
     return `${date.year}-${String(
       date.month
     ).padStart(2, "0")}`;
@@ -452,13 +777,16 @@ function Dashboard() {
       return currentMember.name;
     }
 
-    const selected = members.find(
-      (member) =>
-        member.member_id ===
-        selectedMember
-    );
+    const selected =
+      members.find(
+        (member) =>
+          member.member_id ===
+          selectedMember
+      );
 
-    return selected?.name || "";
+    return (
+      selected?.name || ""
+    );
   }
 
   // --------------------------------------------------
@@ -473,8 +801,10 @@ function Dashboard() {
       ).toLocaleString(
         "default",
         {
-          month: "long",
-          year: "numeric",
+          month:
+            "long",
+          year:
+            "numeric",
         }
       );
 
@@ -485,8 +815,10 @@ function Dashboard() {
       ).toLocaleString(
         "default",
         {
-          month: "long",
-          year: "numeric",
+          month:
+            "long",
+          year:
+            "numeric",
         }
       );
 
@@ -509,7 +841,10 @@ function Dashboard() {
   // Error
   // --------------------------------------------------
 
-  if (error && !currentMember) {
+  if (
+    error &&
+    !currentMember
+  ) {
     return (
       <div className="dashboard-error">
         {error}
@@ -547,7 +882,9 @@ function Dashboard() {
       {/* ------------------------------------------ */}
 
       <div className="dashboard-header">
+
         <div>
+
           <h1>
             Dashboard
           </h1>
@@ -556,7 +893,9 @@ function Dashboard() {
             Track KPI performance
             and progress over time.
           </p>
+
         </div>
+
       </div>
 
       {/* ------------------------------------------ */}
@@ -604,13 +943,18 @@ function Dashboard() {
             </label>
 
             <select
-              value={selectedMember}
-              onChange={(event) =>
+              value={
+                selectedMember
+              }
+              onChange={(
+                event
+              ) =>
                 setSelectedMember(
                   event.target.value
                 )
               }
             >
+
               <option value="">
                 Select Member
               </option>
@@ -629,6 +973,7 @@ function Dashboard() {
                   </option>
                 )
               )}
+
             </select>
 
           </div>
@@ -645,25 +990,49 @@ function Dashboard() {
           </label>
 
           <select
-            value={getDateValue(
-              fromDate
-            )}
+            value={
+              selectedMember &&
+              monthOptions.length > 0
+                ? getDateValue(
+                    fromDate
+                  )
+                : ""
+            }
             onChange={
               handleFromChange
             }
+            disabled={
+              !selectedMember ||
+              monthOptions.length === 0
+            }
           >
-            {monthOptions.map(
-              (option) => (
-                <option
-                  key={`from-${option.year}-${option.month}`}
-                  value={`${option.year}-${String(
-                    option.month
-                  ).padStart(2, "0")}`}
-                >
-                  {option.fullLabel}
-                </option>
+
+            {!selectedMember ? (
+              <option value="">
+                Select Member First
+              </option>
+            ) : monthOptions.length ===
+              0 ? (
+              <option value="">
+                No scored months
+              </option>
+            ) : (
+              monthOptions.map(
+                (option) => (
+                  <option
+                    key={`from-${option.year}-${option.month}`}
+                    value={`${option.year}-${String(
+                      option.month
+                    ).padStart(2, "0")}`}
+                  >
+                    {
+                      option.fullLabel
+                    }
+                  </option>
+                )
               )
             )}
+
           </select>
 
         </div>
@@ -679,25 +1048,49 @@ function Dashboard() {
           </label>
 
           <select
-            value={getDateValue(
-              toDate
-            )}
+            value={
+              selectedMember &&
+              monthOptions.length > 0
+                ? getDateValue(
+                    toDate
+                  )
+                : ""
+            }
             onChange={
               handleToChange
             }
+            disabled={
+              !selectedMember ||
+              monthOptions.length === 0
+            }
           >
-            {monthOptions.map(
-              (option) => (
-                <option
-                  key={`to-${option.year}-${option.month}`}
-                  value={`${option.year}-${String(
-                    option.month
-                  ).padStart(2, "0")}`}
-                >
-                  {option.fullLabel}
-                </option>
+
+            {!selectedMember ? (
+              <option value="">
+                Select Member First
+              </option>
+            ) : monthOptions.length ===
+              0 ? (
+              <option value="">
+                No scored months
+              </option>
+            ) : (
+              monthOptions.map(
+                (option) => (
+                  <option
+                    key={`to-${option.year}-${option.month}`}
+                    value={`${option.year}-${String(
+                      option.month
+                    ).padStart(2, "0")}`}
+                  >
+                    {
+                      option.fullLabel
+                    }
+                  </option>
+                )
               )
             )}
+
           </select>
 
         </div>
@@ -705,15 +1098,42 @@ function Dashboard() {
       </div>
 
       {/* ------------------------------------------ */}
+      {/* NO SCORES */}
+      {/* ------------------------------------------ */}
+
+      {selectedMember &&
+        availableMonths.length ===
+          0 && (
+          <div className="dashboard-no-data">
+
+            <h3>
+              No KPI scores available
+            </h3>
+
+            <p>
+              There are currently no
+              KPI scores recorded for
+              this IS member.
+            </p>
+
+          </div>
+        )}
+
+      {/* ------------------------------------------ */}
       {/* INVALID DATE RANGE */}
       {/* ------------------------------------------ */}
 
-      {!validDateRange && (
-        <div className="dashboard-date-error">
-          The From date cannot be
-          later than the To date.
-        </div>
-      )}
+      {selectedMember &&
+        availableMonths.length >
+          0 &&
+        !validDateRange && (
+          <div className="dashboard-date-error">
+
+            The From date cannot be
+            later than the To date.
+
+          </div>
+        )}
 
       {/* ------------------------------------------ */}
       {/* SELECTED MEMBER */}
@@ -722,10 +1142,13 @@ function Dashboard() {
       {isAdmin &&
         selectedMember && (
           <div className="dashboard-selected-member">
+
             Viewing performance for{" "}
+
             <strong>
               {getSelectedMemberName()}
             </strong>
+
           </div>
         )}
 
@@ -754,148 +1177,181 @@ function Dashboard() {
           </div>
         )}
 
-        {/* ------------------------------------------ */}
-		{/* KPI CHARTS */}
-		{/* ------------------------------------------ */}
+      {/* ------------------------------------------ */}
+      {/* KPI CHARTS */}
+      {/* ------------------------------------------ */}
 
-		{selectedMember &&
-		  validDateRange && (
-			<section className="dashboard-section">
+      {selectedMember &&
+        availableMonths.length >
+          0 &&
+        validDateRange && (
+          <section className="dashboard-section">
 
-			  {/* -------------------------------------- */}
-			  {/* PRIORITY KPIs */}
-			  {/* -------------------------------------- */}
+            {/* -------------------------------------- */}
+            {/* PRIORITY KPIs */}
+            {/* -------------------------------------- */}
 
-			  {kpis.filter(
-				(kpi) =>
-				  String(kpi.status || "").toLowerCase() ===
-				  "priority"
-			  ).length > 0 && (
-				<div className="dashboard-kpi-group">
+            {kpis.filter(
+              (kpi) =>
+                String(
+                  kpi.status || ""
+                ).toLowerCase() ===
+                "priority"
+            ).length > 0 && (
+              <div className="dashboard-kpi-group">
 
-				  <div className="dashboard-kpi-grid">
+                <div className="dashboard-kpi-grid">
 
-					{kpis
-					  .filter(
-						(kpi) =>
-						  String(
-							kpi.status || ""
-						  ).toLowerCase() ===
-						  "priority"
-					  )
-					  .map((kpi) => {
+                  {kpis
+                    .filter(
+                      (kpi) =>
+                        String(
+                          kpi.status || ""
+                        ).toLowerCase() ===
+                        "priority"
+                    )
+                    .map(
+                      (kpi) => {
 
-						const kpiScores =
-						  scores.filter(
-							(score) =>
-							  score.kpi_id ===
-							  kpi.kpi_id
-						  );
+                        const kpiScores =
+                          scores.filter(
+                            (score) =>
+                              score.kpi_id ===
+                              kpi.kpi_id
+                          );
 
-						return (
-						  <KPIChart
-							key={kpi.kpi_id}
-							kpi={kpi}
-							scores={kpiScores}
-							fromDate={fromDate}
-							toDate={toDate}
-						  />
-						);
-					  })}
+                        return (
+                          <KPIChart
+                            key={
+                              kpi.kpi_id
+                            }
+                            kpi={kpi}
+                            scores={
+                              kpiScores
+                            }
+                            fromDate={
+                              fromDate
+                            }
+                            toDate={
+                              toDate
+                            }
+                          />
+                        );
+                      }
+                    )}
 
-				  </div>
+                </div>
 
-				</div>
-			  )}
+              </div>
+            )}
 
-			  {/* -------------------------------------- */}
-			  {/* DATE RANGE DIVIDER */}
-			  {/* -------------------------------------- */}
+            {/* -------------------------------------- */}
+            {/* DATE RANGE DIVIDER */}
+            {/* -------------------------------------- */}
 
-			  <div className="dashboard-section-header">
-				
-				<div>
-				  <p>
-					KPI performance from{" "}
-					{formatDateRange()}.
-				  </p>
-				</div>
+            <div className="dashboard-section-header">
 
-			  </div>
+              <div>
 
-			  {/* -------------------------------------- */}
-			  {/* ACTIVE KPIs */}
-			  {/* -------------------------------------- */}
+                <p>
+                  KPI performance from{" "}
+                  {formatDateRange()}.
+                </p>
 
-			  {kpis.filter(
-				(kpi) =>
-				  String(kpi.status || "").toLowerCase() !==
-					"priority" &&
-				  String(kpi.status || "").toLowerCase() !==
-					"hidden"
-			  ).length > 0 ? (
+              </div>
 
-				<div className="dashboard-kpi-group">
+            </div>
 
-				  <div className="dashboard-kpi-grid">
+            {/* -------------------------------------- */}
+            {/* ACTIVE KPIs */}
+            {/* -------------------------------------- */}
 
-					{kpis
-					  .filter(
-						(kpi) =>
-						  String(
-							kpi.status || ""
-						  ).toLowerCase() !==
-							"priority" &&
-						  String(
-							kpi.status || ""
-						  ).toLowerCase() !==
-							"hidden"
-					  )
-					  .map((kpi) => {
+            {kpis.filter(
+              (kpi) =>
+                String(
+                  kpi.status || ""
+                ).toLowerCase() !==
+                  "priority" &&
+                String(
+                  kpi.status || ""
+                ).toLowerCase() !==
+                  "hidden"
+            ).length > 0 ? (
 
-						const kpiScores =
-						  scores.filter(
-							(score) =>
-							  score.kpi_id ===
-							  kpi.kpi_id
-						  );
+              <div className="dashboard-kpi-group">
 
-						return (
-						  <KPIChart
-							key={kpi.kpi_id}
-							kpi={kpi}
-							scores={kpiScores}
-							fromDate={fromDate}
-							toDate={toDate}
-						  />
-						);
-					  })}
+                <div className="dashboard-kpi-grid">
 
-				  </div>
+                  {kpis
+                    .filter(
+                      (kpi) =>
+                        String(
+                          kpi.status || ""
+                        ).toLowerCase() !==
+                          "priority" &&
+                        String(
+                          kpi.status || ""
+                        ).toLowerCase() !==
+                          "hidden"
+                    )
+                    .map(
+                      (kpi) => {
 
-				</div>
+                        const kpiScores =
+                          scores.filter(
+                            (score) =>
+                              score.kpi_id ===
+                              kpi.kpi_id
+                          );
 
-			  ) : (
-				kpis.filter(
-				  (kpi) =>
-					String(
-					  kpi.status || ""
-					).toLowerCase() !==
-					  "priority" &&
-					String(
-					  kpi.status || ""
-					).toLowerCase() !==
-					  "hidden"
-				).length === 0 && (
-				  <div className="dashboard-no-data">
-					No active KPIs are
-					currently available.
-				  </div>
-				)
-			  )}
+                        return (
+                          <KPIChart
+                            key={
+                              kpi.kpi_id
+                            }
+                            kpi={kpi}
+                            scores={
+                              kpiScores
+                            }
+                            fromDate={
+                              fromDate
+                            }
+                            toDate={
+                              toDate
+                            }
+                          />
+                        );
+                      }
+                    )}
 
-			</section>
-		  )}
+                </div>
+
+              </div>
+
+            ) : (
+              kpis.filter(
+                (kpi) =>
+                  String(
+                    kpi.status || ""
+                  ).toLowerCase() !==
+                    "priority" &&
+                  String(
+                    kpi.status || ""
+                  ).toLowerCase() !==
+                    "hidden"
+              ).length ===
+                0 && (
+                <div className="dashboard-no-data">
+
+                  No active KPIs are
+                  currently available.
+
+                </div>
+              )
+            )}
+
+          </section>
+        )}
 
     </div>
   );

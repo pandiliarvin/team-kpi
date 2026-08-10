@@ -157,9 +157,9 @@ function AppSidebar() {
 
             {isOpen && (
               <div className="sidebar-brand-text">
-                <h2>Team KPI</h2>
+                <h2>IS KPI Portal</h2>
                 <span>
-                  Performance Dashboard
+                  Performance Management
                 </span>
               </div>
             )}

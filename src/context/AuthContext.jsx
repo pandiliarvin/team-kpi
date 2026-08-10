@@ -1,4 +1,10 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+
 import { supabase } from "../services/supabase";
 
 const AuthContext = createContext();
@@ -8,30 +14,114 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const getUser = async () => {
+    let mounted = true;
+
+    // --------------------------------------------------
+    // Load current authenticated user
+    // --------------------------------------------------
+
+    async function getInitialUser() {
       const {
         data: { user },
+        error,
       } = await supabase.auth.getUser();
 
-      setUser(user);
-      setLoading(false);
-    };
+      if (!mounted) {
+        return;
+      }
 
-    getUser();
+      if (error) {
+        console.error(
+          "Error getting authenticated user:",
+          error
+        );
+
+        setUser(null);
+      } else {
+        setUser(user ?? null);
+      }
+
+      setLoading(false);
+    }
+
+    getInitialUser();
+
+    // --------------------------------------------------
+    // Listen for authentication changes
+    //
+    // IMPORTANT:
+    // Do not update React state when Supabase is
+    // simply refreshing the same user's session.
+    // --------------------------------------------------
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+    } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (!mounted) {
+          return;
+        }
+
+        const nextUser =
+          session?.user ?? null;
+
+        setUser((currentUser) => {
+          // ------------------------------------------------
+          // Same authenticated user.
+          //
+          // This prevents TOKEN_REFRESHED and similar
+          // Supabase events from replacing the user object
+          // and unnecessarily triggering application logic.
+          // ------------------------------------------------
+
+          if (
+            currentUser?.id &&
+            nextUser?.id &&
+            currentUser.id === nextUser.id
+          ) {
+            return currentUser;
+          }
+
+          // ------------------------------------------------
+          // User logged out
+          // ------------------------------------------------
+
+          if (!nextUser) {
+            return null;
+          }
+
+          // ------------------------------------------------
+          // A genuinely different user logged in
+          // ------------------------------------------------
+
+          return nextUser;
+        });
+      }
+    );
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
+  // --------------------------------------------------
+  // Sign out
+  // --------------------------------------------------
+
   const signOut = async () => {
-    await supabase.auth.signOut();
+    const { error } =
+      await supabase.auth.signOut();
+
+    if (error) {
+      console.error(
+        "Error signing out:",
+        error
+      );
+
+      return;
+    }
+
     setUser(null);
   };
 

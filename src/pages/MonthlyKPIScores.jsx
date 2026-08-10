@@ -21,6 +21,16 @@ function MonthlyKPIScores() {
     new Date().getFullYear()
   );
 
+  // --------------------------------------------------
+  // Available months for selected member/year
+  // --------------------------------------------------
+
+  const [availableMonths, setAvailableMonths] =
+    useState([]);
+
+  const [loadingMonths, setLoadingMonths] =
+    useState(false);
+
   const [scores, setScores] = useState({});
   const [originalScores, setOriginalScores] =
     useState({});
@@ -74,7 +84,9 @@ function MonthlyKPIScores() {
   // --------------------------------------------------
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      return;
+    }
 
     initializePage();
   }, [user]);
@@ -107,7 +119,7 @@ function MonthlyKPIScores() {
     }
 
     // ------------------------------------------------
-    // Admin / Team Lead
+    // Admin
     // Can view own scores + team scores
     // Can edit team members
     // ------------------------------------------------
@@ -208,60 +220,58 @@ function MonthlyKPIScores() {
     setMembers(data || []);
   }
 
-	// --------------------------------------------------
-	// Load KPIs
-	// Active first, then Priority
-	// Hidden KPIs are excluded
-	// --------------------------------------------------
+  // --------------------------------------------------
+  // Load KPIs
+  // Active first, then Priority
+  // Hidden KPIs are excluded
+  // --------------------------------------------------
 
-	async function fetchKPIs() {
-	  const { data, error } = await supabase
-		.from("kpis")
-		.select(
-		  "kpi_id, name, unit, target_value, higher_is_better, sort_order, status"
-		)
-		.in("status", ["active", "priority"])
-		.order("sort_order", {
-		  ascending: true,
-		});
+  async function fetchKPIs() {
+    const { data, error } = await supabase
+      .from("kpis")
+      .select(
+        "kpi_id, name, unit, target_value, higher_is_better, sort_order, status"
+      )
+      .in("status", ["active", "priority"])
+      .order("sort_order", {
+        ascending: true,
+      });
 
-	  if (error) {
-		console.error(
-		  "Error loading KPIs:",
-		  error
-		);
+    if (error) {
+      console.error(
+        "Error loading KPIs:",
+        error
+      );
 
-		return;
-	  }
+      return;
+    }
 
-	  // Active KPIs first, Priority KPIs second.
-	  const sortedKPIs = (data || []).sort(
-		(a, b) => {
-		  const statusOrder = {
-			active: 1,
-			priority: 2,
-		  };
+    // Active KPIs first.
+    // Priority KPIs second.
+    const sortedKPIs = (data || []).sort(
+      (a, b) => {
+        const statusOrder = {
+          active: 1,
+          priority: 2,
+        };
 
-		  const statusDifference =
-			statusOrder[a.status] -
-			statusOrder[b.status];
+        const statusDifference =
+          statusOrder[a.status] -
+          statusOrder[b.status];
 
-		  // If both have the same status,
-		  // keep the existing sort_order.
-		  if (statusDifference === 0) {
-			return (
-			  (a.sort_order ?? 9999) -
-			  (b.sort_order ?? 9999)
-			);
-		  }
+        if (statusDifference === 0) {
+          return (
+            (a.sort_order ?? 9999) -
+            (b.sort_order ?? 9999)
+          );
+        }
 
-		  return statusDifference;
-		}
-	  );
+        return statusDifference;
+      }
+    );
 
-	  setKpis(sortedKPIs);
-	}
-
+    setKpis(sortedKPIs);
+  }
 
   // --------------------------------------------------
   // Determine whether selected member can be edited
@@ -290,12 +300,139 @@ function MonthlyKPIScores() {
     return false;
   }
 
-  // --------------------------------------------------
-  // Load current month scores
-  // --------------------------------------------------
+  // ==================================================
+  // LOAD AVAILABLE MONTHS
+  // ==================================================
+  //
+  // Only months where the selected member has at
+  // least one KPI score for the selected year.
+  //
+  // A score of 0 is considered a valid value.
+  //
+  // ==================================================
+
+  useEffect(() => {
+    if (!selectedMember || !year) {
+      setAvailableMonths([]);
+      return;
+    }
+
+    loadAvailableMonths();
+  }, [
+    selectedMember,
+    year,
+  ]);
+
+  async function loadAvailableMonths() {
+    setLoadingMonths(true);
+
+    const { data, error } = await supabase
+      .from("monthly_kpi_scores")
+      .select("month, value")
+      .eq(
+        "member_id",
+        selectedMember
+      )
+      .eq(
+        "year",
+        Number(year)
+      )
+      .not(
+        "value",
+        "is",
+        null
+      );
+
+    if (error) {
+      console.error(
+        "Error loading available months:",
+        error
+      );
+
+      setAvailableMonths([]);
+      setLoadingMonths(false);
+      return;
+    }
+
+    // ------------------------------------------------
+    // Get unique months
+    // ------------------------------------------------
+
+    const uniqueMonths = [
+      ...new Set(
+        (data || [])
+          .map(
+            (score) =>
+              Number(score.month)
+          )
+          .filter(
+            (monthValue) =>
+              !Number.isNaN(monthValue)
+          )
+      ),
+    ].sort(
+      (a, b) => a - b
+    );
+
+    setAvailableMonths(
+      uniqueMonths
+    );
+
+    // ------------------------------------------------
+    // Keep current month if it exists.
+    //
+    // Otherwise automatically select the first
+    // available month.
+    // ------------------------------------------------
+
+    if (
+      uniqueMonths.length > 0
+    ) {
+      setMonth(
+        (currentMonth) => {
+          if (
+            uniqueMonths.includes(
+              Number(currentMonth)
+            )
+          ) {
+            return currentMonth;
+          }
+
+          return uniqueMonths[0];
+        }
+      );
+    }
+
+    setLoadingMonths(false);
+  }
+
+  // ==================================================
+  // LOAD CURRENT + PREVIOUS MONTH SCORES
+  // ==================================================
 
   useEffect(() => {
     if (!selectedMember) {
+      setScores({});
+      setOriginalScores({});
+      setPreviousScores({});
+      return;
+    }
+
+    // Don't load a month that isn't available.
+    if (
+      availableMonths.length > 0 &&
+      !availableMonths.includes(
+        Number(month)
+      )
+    ) {
+      return;
+    }
+
+    // No available months means there is nothing
+    // to load.
+    if (
+      availableMonths.length === 0
+    ) {
       setScores({});
       setOriginalScores({});
       setPreviousScores({});
@@ -307,6 +444,7 @@ function MonthlyKPIScores() {
     selectedMember,
     month,
     year,
+    availableMonths,
   ]);
 
   async function loadScores() {
@@ -314,7 +452,10 @@ function MonthlyKPIScores() {
     // Load current month
     // ----------------------------------------------
 
-    const { data, error } = await supabase
+    const {
+      data,
+      error,
+    } = await supabase
       .from("monthly_kpi_scores")
       .select(
         "kpi_id, value, remarks"
@@ -323,8 +464,14 @@ function MonthlyKPIScores() {
         "member_id",
         selectedMember
       )
-      .eq("month", month)
-      .eq("year", year);
+      .eq(
+        "month",
+        Number(month)
+      )
+      .eq(
+        "year",
+        Number(year)
+      );
 
     if (error) {
       console.error(
@@ -337,13 +484,21 @@ function MonthlyKPIScores() {
 
     const existingScores = {};
 
-    (data || []).forEach((score) => {
-      existingScores[score.kpi_id] =
-        score.value;
-    });
+    (data || []).forEach(
+      (score) => {
+        existingScores[
+          score.kpi_id
+        ] = score.value;
+      }
+    );
 
-    setScores(existingScores);
-    setOriginalScores(existingScores);
+    setScores(
+      existingScores
+    );
+
+    setOriginalScores(
+      existingScores
+    );
 
     // ----------------------------------------------
     // Calculate previous month
@@ -352,12 +507,12 @@ function MonthlyKPIScores() {
     const previousMonth =
       month === 1
         ? 12
-        : month - 1;
+        : Number(month) - 1;
 
     const previousYear =
       month === 1
-        ? year - 1
-        : year;
+        ? Number(year) - 1
+        : Number(year);
 
     // ----------------------------------------------
     // Load previous month scores
@@ -488,28 +643,32 @@ function MonthlyKPIScores() {
             kpi.kpi_id
           ] !== ""
       )
-      .map((kpi) => ({
-        member_id:
-          selectedMember,
+      .map(
+        (kpi) => ({
+          member_id:
+            selectedMember,
 
-        kpi_id:
-          kpi.kpi_id,
+          kpi_id:
+            kpi.kpi_id,
 
-        month:
-          Number(month),
+          month:
+            Number(month),
 
-        year:
-          Number(year),
+          year:
+            Number(year),
 
-        value:
-          Number(
-            scores[
-              kpi.kpi_id
-            ]
-          ),
-      }));
+          value:
+            Number(
+              scores[
+                kpi.kpi_id
+              ]
+            ),
+        })
+      );
 
-    if (records.length === 0) {
+    if (
+      records.length === 0
+    ) {
       showNotification(
         "Please enter at least one score.",
         "error"
@@ -518,15 +677,20 @@ function MonthlyKPIScores() {
       return;
     }
 
-    const { error } =
+    const {
+      error,
+    } =
       await supabase
         .from(
           "monthly_kpi_scores"
         )
-        .upsert(records, {
-          onConflict:
-            "member_id,kpi_id,month,year",
-        });
+        .upsert(
+          records,
+          {
+            onConflict:
+              "member_id,kpi_id,month,year",
+          }
+        );
 
     if (error) {
       console.error(
@@ -542,7 +706,14 @@ function MonthlyKPIScores() {
       return;
     }
 
+    // Reload the scores
     await loadScores();
+
+    // Refresh available months.
+    //
+    // This is important if the user just created
+    // the first score for a previously empty month.
+    await loadAvailableMonths();
 
     window.dispatchEvent(
       new CustomEvent(
@@ -602,8 +773,7 @@ function MonthlyKPIScores() {
       return currentMember.name;
     }
 
-    // Otherwise find the selected member
-    // in the loaded member list.
+    // Otherwise find selected member
     const selected =
       members.find(
         (member) =>
@@ -622,8 +792,8 @@ function MonthlyKPIScores() {
 
   function getMonthName() {
     return new Date(
-      year,
-      month - 1
+      Number(year),
+      Number(month) - 1
     ).toLocaleString(
       "default",
       {
@@ -640,12 +810,12 @@ function MonthlyKPIScores() {
     const previousMonth =
       month === 1
         ? 12
-        : month - 1;
+        : Number(month) - 1;
 
     const previousYear =
       month === 1
-        ? year - 1
-        : year;
+        ? Number(year) - 1
+        : Number(year);
 
     return new Date(
       previousYear,
@@ -664,8 +834,8 @@ function MonthlyKPIScores() {
 
   function getPreviousMonthYear() {
     return month === 1
-      ? year - 1
-      : year;
+      ? Number(year) - 1
+      : Number(year);
   }
 
   // --------------------------------------------------
@@ -695,7 +865,9 @@ function MonthlyKPIScores() {
 
   function isIdlePercentage(kpi) {
     return (
-      kpi.name?.trim().toLowerCase() ===
+      kpi.name
+        ?.trim()
+        .toLowerCase() ===
       "idle percentage"
     );
   }
@@ -762,7 +934,6 @@ function MonthlyKPIScores() {
     // ----------------------------------------------
     // Idle Percentage
     //
-    // For Idle Percentage:
     // Below target = good
     // Above target = bad
     // ----------------------------------------------
@@ -988,6 +1159,61 @@ function MonthlyKPIScores() {
   }
 
   // --------------------------------------------------
+  // Month names
+  // --------------------------------------------------
+
+  const monthNames = [
+    {
+      value: 1,
+      label: "January",
+    },
+    {
+      value: 2,
+      label: "February",
+    },
+    {
+      value: 3,
+      label: "March",
+    },
+    {
+      value: 4,
+      label: "April",
+    },
+    {
+      value: 5,
+      label: "May",
+    },
+    {
+      value: 6,
+      label: "June",
+    },
+    {
+      value: 7,
+      label: "July",
+    },
+    {
+      value: 8,
+      label: "August",
+    },
+    {
+      value: 9,
+      label: "September",
+    },
+    {
+      value: 10,
+      label: "October",
+    },
+    {
+      value: 11,
+      label: "November",
+    },
+    {
+      value: 12,
+      label: "December",
+    },
+  ];
+
+  // --------------------------------------------------
   // Loading
   // --------------------------------------------------
 
@@ -1096,11 +1322,14 @@ function MonthlyKPIScores() {
               }
               onChange={(
                 event
-              ) =>
+              ) => {
                 setSelectedMember(
                   event.target.value
-                )
-              }
+                );
+
+                // Clear old months immediately
+                setAvailableMonths([]);
+              }}
             >
 
               <option value="">
@@ -1141,7 +1370,18 @@ function MonthlyKPIScores() {
 
           <select
             className="scores-select"
-            value={month}
+            value={
+              availableMonths.includes(
+                Number(month)
+              )
+                ? month
+                : ""
+            }
+            disabled={
+              !selectedMember ||
+              loadingMonths ||
+              availableMonths.length === 0
+            }
             onChange={(
               event
             ) =>
@@ -1153,53 +1393,50 @@ function MonthlyKPIScores() {
             }
           >
 
-            <option value={1}>
-              January
-            </option>
+            {!selectedMember ? (
+              <option value="">
+                Select member first
+              </option>
+            ) : loadingMonths ? (
+              <option value="">
+                Loading months...
+              </option>
+            ) : availableMonths.length ===
+              0 ? (
+              <option value="">
+                No months with scores
+              </option>
+            ) : (
+              <>
+                <option value="">
+                  Select Month
+                </option>
 
-            <option value={2}>
-              February
-            </option>
-
-            <option value={3}>
-              March
-            </option>
-
-            <option value={4}>
-              April
-            </option>
-
-            <option value={5}>
-              May
-            </option>
-
-            <option value={6}>
-              June
-            </option>
-
-            <option value={7}>
-              July
-            </option>
-
-            <option value={8}>
-              August
-            </option>
-
-            <option value={9}>
-              September
-            </option>
-
-            <option value={10}>
-              October
-            </option>
-
-            <option value={11}>
-              November
-            </option>
-
-            <option value={12}>
-              December
-            </option>
+                {monthNames
+                  .filter(
+                    (monthOption) =>
+                      availableMonths.includes(
+                        monthOption.value
+                      )
+                  )
+                  .map(
+                    (monthOption) => (
+                      <option
+                        key={
+                          monthOption.value
+                        }
+                        value={
+                          monthOption.value
+                        }
+                      >
+                        {
+                          monthOption.label
+                        }
+                      </option>
+                    )
+                  )}
+              </>
+            )}
 
           </select>
 
@@ -1219,13 +1456,20 @@ function MonthlyKPIScores() {
             value={year}
             onChange={(
               event
-            ) =>
-              setYear(
+            ) => {
+              const newYear =
                 Number(
                   event.target.value
-                )
-              )
-            }
+                );
+
+              setYear(
+                newYear
+              );
+
+              // Clear months while the
+              // new year is being checked.
+              setAvailableMonths([]);
+            }}
           />
 
         </div>
@@ -1259,245 +1503,278 @@ function MonthlyKPIScores() {
         )}
 
       {/* ------------------------------------------ */}
+      {/* NO SCORES FOR YEAR */}
+      {/* ------------------------------------------ */}
+
+      {selectedMember &&
+        !loadingMonths &&
+        availableMonths.length ===
+          0 && (
+          <div className="scores-empty">
+
+            <div className="scores-empty-icon">
+              ✓
+            </div>
+
+            <h3>
+              No KPI scores found
+            </h3>
+
+            <p>
+              There are no KPI scores
+              recorded for{" "}
+              {getSelectedMemberName()}{" "}
+              in {year}.
+            </p>
+
+          </div>
+        )}
+
+      {/* ------------------------------------------ */}
       {/* KPI TABLE */}
       {/* ------------------------------------------ */}
 
-      {selectedMember && (
-        <>
+      {selectedMember &&
+        availableMonths.length >
+          0 &&
+        availableMonths.includes(
+          Number(month)
+        ) && (
+          <>
 
-          <div className="scores-table-header">
+            <div className="scores-table-header">
 
-            <h2>
-              {getSelectedMemberName()}
-              's KPI Scores for{" "}
-              {getMonthName()} {year}
-            </h2>
-
-          </div>
-
-          <div className="kpi-table-wrapper">
-
-            <table className="kpi-table">
-
-              <thead>
-
-                <tr>
-
-                  <th>
-                    KPI
-                  </th>
-
-                  <th>
-                    Target
-                  </th>
-
-                  <th className="score-column">
-                    {getMonthName()}{" "}
-                    {year} Score
-                  </th>
-
-                  <th>
-                    Remarks
-                  </th>
-
-                </tr>
-
-              </thead>
-
-              <tbody>
-
-                {kpis.length === 0 ? (
-                  <tr>
-
-                    <td
-                      colSpan="4"
-                      className="kpi-empty"
-                    >
-                      No KPIs found.
-                    </td>
-
-                  </tr>
-                ) : (
-                  kpis.map(
-                    (kpi) => {
-
-                      const targetRemark =
-                        getTargetRemark(
-                          kpi
-                        );
-
-                      const previousRemark =
-                        getPreviousMonthRemark(
-                          kpi
-                        );
-
-                      return (
-                        <tr
-                          key={
-                            kpi.kpi_id
-                          }
-                        >
-
-                          {/* KPI */}
-
-                          <td className="kpi-name">
-                            {kpi.name}
-                          </td>
-
-                          {/* Target */}
-
-                          <td>
-                            {kpi.target_value ??
-                              "-"}
-
-                            {kpi.unit && (
-                              <span className="target-unit">
-                                {" "}
-                                {kpi.unit}
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Score */}
-
-                          <td className="score-column">
-
-                            {canEditSelectedMember() ? (
-                              <div className="score-input-wrapper">
-
-                                <input
-                                  className="score-input"
-                                  type="number"
-                                  value={
-                                    scores[
-                                      kpi.kpi_id
-                                    ] ?? ""
-                                  }
-                                  onChange={(
-                                    event
-                                  ) =>
-                                    updateScore(
-                                      kpi.kpi_id,
-                                      event
-                                        .target
-                                        .value
-                                    )
-                                  }
-                                />
-
-                                {kpi.unit && (
-                                  <span className="score-unit">
-                                    {kpi.unit}
-                                  </span>
-                                )}
-
-                              </div>
-                            ) : (
-                              <div className="score-view-wrapper">
-
-                                <span className="score-value">
-                                  {scores[
-                                    kpi.kpi_id
-                                  ] ?? "-"}
-                                </span>
-
-                                {kpi.unit && (
-                                  <span className="score-unit">
-                                    {kpi.unit}
-                                  </span>
-                                )}
-
-                              </div>
-                            )}
-
-                          </td>
-
-                          {/* Remarks */}
-
-                          <td className="remarks-cell">
-
-                            <div className="remarks-container">
-
-                              {targetRemark && (
-                                <div
-                                  className={`remark-line remark-${targetRemark.status}`}
-                                >
-
-                                  <span className="remark-arrow">
-                                    {
-                                      targetRemark.arrow
-                                    }
-                                  </span>
-
-                                  <span>
-                                    {
-                                      targetRemark.text
-                                    }
-                                  </span>
-
-                                </div>
-                              )}
-
-                              {previousRemark && (
-                                <div
-                                  className={`remark-line remark-${previousRemark.status}`}
-                                >
-
-                                  <span className="remark-arrow">
-                                    {
-                                      previousRemark.arrow
-                                    }
-                                  </span>
-
-                                  <span>
-                                    {
-                                      previousRemark.text
-                                    }
-                                  </span>
-
-                                </div>
-                              )}
-
-                            </div>
-
-                          </td>
-
-                        </tr>
-                      );
-                    }
-                  )
-                )}
-
-              </tbody>
-
-            </table>
-
-          </div>
-
-          {/* ------------------------------------------ */}
-          {/* SAVE */}
-          {/* ------------------------------------------ */}
-
-          {canEditSelectedMember() && (
-            <div className="scores-actions">
-
-              <button
-                className="scores-save-button"
-                onClick={
-                  saveScores
-                }
-                disabled={
-                  !selectedMember
-                }
-              >
-                Save Scores
-              </button>
+              <h2>
+                {getSelectedMemberName()}
+                's KPI Scores for{" "}
+                {getMonthName()} {year}
+              </h2>
 
             </div>
-          )}
 
-        </>
-      )}
+            <div className="kpi-table-wrapper">
+
+              <table className="kpi-table">
+
+                <thead>
+
+                  <tr>
+
+                    <th>
+                      KPI
+                    </th>
+
+                    <th>
+                      Target
+                    </th>
+
+                    <th className="score-column">
+                      {getMonthName()}{" "}
+                      {year} Score
+                    </th>
+
+                    <th>
+                      Remarks
+                    </th>
+
+                  </tr>
+
+                </thead>
+
+                <tbody>
+
+                  {kpis.length === 0 ? (
+                    <tr>
+
+                      <td
+                        colSpan="4"
+                        className="kpi-empty"
+                      >
+                        No KPIs found.
+                      </td>
+
+                    </tr>
+                  ) : (
+                    kpis.map(
+                      (kpi) => {
+
+                        const targetRemark =
+                          getTargetRemark(
+                            kpi
+                          );
+
+                        const previousRemark =
+                          getPreviousMonthRemark(
+                            kpi
+                          );
+
+                        return (
+                          <tr
+                            key={
+                              kpi.kpi_id
+                            }
+                          >
+
+                            {/* KPI */}
+
+                            <td className="kpi-name">
+                              {kpi.name}
+                            </td>
+
+                            {/* Target */}
+
+                            <td>
+                              {kpi.target_value ??
+                                "-"}
+
+                              {kpi.unit && (
+                                <span className="target-unit">
+                                  {" "}
+                                  {kpi.unit}
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Score */}
+
+                            <td className="score-column">
+
+                              {canEditSelectedMember() ? (
+                                <div className="score-input-wrapper">
+
+                                  <input
+                                    className="score-input"
+                                    type="number"
+                                    value={
+                                      scores[
+                                        kpi.kpi_id
+                                      ] ?? ""
+                                    }
+                                    onChange={(
+                                      event
+                                    ) =>
+                                      updateScore(
+                                        kpi.kpi_id,
+                                        event
+                                          .target
+                                          .value
+                                      )
+                                    }
+                                  />
+
+                                  {kpi.unit && (
+                                    <span className="score-unit">
+                                      {kpi.unit}
+                                    </span>
+                                  )}
+
+                                </div>
+                              ) : (
+                                <div className="score-view-wrapper">
+
+                                  <span className="score-value">
+                                    {scores[
+                                      kpi.kpi_id
+                                    ] ?? "-"}
+                                  </span>
+
+                                  {kpi.unit && (
+                                    <span className="score-unit">
+                                      {kpi.unit}
+                                    </span>
+                                  )}
+
+                                </div>
+                              )}
+
+                            </td>
+
+                            {/* Remarks */}
+
+                            <td className="remarks-cell">
+
+                              <div className="remarks-container">
+
+                                {targetRemark && (
+                                  <div
+                                    className={`remark-line remark-${targetRemark.status}`}
+                                  >
+
+                                    <span className="remark-arrow">
+                                      {
+                                        targetRemark.arrow
+                                      }
+                                    </span>
+
+                                    <span>
+                                      {
+                                        targetRemark.text
+                                      }
+                                    </span>
+
+                                  </div>
+                                )}
+
+                                {previousRemark && (
+                                  <div
+                                    className={`remark-line remark-${previousRemark.status}`}
+                                  >
+
+                                    <span className="remark-arrow">
+                                      {
+                                        previousRemark.arrow
+                                      }
+                                    </span>
+
+                                    <span>
+                                      {
+                                        previousRemark.text
+                                      }
+                                    </span>
+
+                                  </div>
+                                )}
+
+                              </div>
+
+                            </td>
+
+                          </tr>
+                        );
+                      }
+                    )
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+            {/* ------------------------------------------ */}
+            {/* SAVE */}
+            {/* ------------------------------------------ */}
+
+            {canEditSelectedMember() && (
+              <div className="scores-actions">
+
+                <button
+                  className="scores-save-button"
+                  onClick={
+                    saveScores
+                  }
+                  disabled={
+                    !selectedMember
+                  }
+                >
+                  Save Scores
+                </button>
+
+              </div>
+            )}
+
+          </>
+        )}
 
       {/* =================================================
           SAVE NOTIFICATION

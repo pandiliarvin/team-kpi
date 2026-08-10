@@ -42,7 +42,7 @@ function Login() {
         <div className="login-branding">
 
           <h1>
-            IS Team KPI App
+            IS KPI Portal
           </h1>
 
           <p>
@@ -153,7 +153,7 @@ function Login() {
         {/* Footer */}
 
         <div className="login-footer">
-          IS Team KPI App
+          TalentPop {new Date().getFullYear()}
         </div>
 
       </div>
