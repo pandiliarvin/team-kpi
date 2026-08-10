@@ -208,31 +208,60 @@ function MonthlyKPIScores() {
     setMembers(data || []);
   }
 
-  // --------------------------------------------------
-  // Load KPIs
-  // --------------------------------------------------
+	// --------------------------------------------------
+	// Load KPIs
+	// Active first, then Priority
+	// Hidden KPIs are excluded
+	// --------------------------------------------------
 
-  async function fetchKPIs() {
-    const { data, error } = await supabase
-      .from("kpis")
-      .select(
-        "kpi_id, name, unit, target_value, higher_is_better, sort_order"
-      )
-      .order("sort_order", {
-        ascending: true,
-      });
+	async function fetchKPIs() {
+	  const { data, error } = await supabase
+		.from("kpis")
+		.select(
+		  "kpi_id, name, unit, target_value, higher_is_better, sort_order, status"
+		)
+		.in("status", ["active", "priority"])
+		.order("sort_order", {
+		  ascending: true,
+		});
 
-    if (error) {
-      console.error(
-        "Error loading KPIs:",
-        error
-      );
+	  if (error) {
+		console.error(
+		  "Error loading KPIs:",
+		  error
+		);
 
-      return;
-    }
+		return;
+	  }
 
-    setKpis(data || []);
-  }
+	  // Active KPIs first, Priority KPIs second.
+	  const sortedKPIs = (data || []).sort(
+		(a, b) => {
+		  const statusOrder = {
+			active: 1,
+			priority: 2,
+		  };
+
+		  const statusDifference =
+			statusOrder[a.status] -
+			statusOrder[b.status];
+
+		  // If both have the same status,
+		  // keep the existing sort_order.
+		  if (statusDifference === 0) {
+			return (
+			  (a.sort_order ?? 9999) -
+			  (b.sort_order ?? 9999)
+			);
+		  }
+
+		  return statusDifference;
+		}
+	  );
+
+	  setKpis(sortedKPIs);
+	}
+
 
   // --------------------------------------------------
   // Determine whether selected member can be edited

@@ -17,6 +17,7 @@ function KPIManagement() {
     const { data, error } = await supabase
       .from("kpis")
       .select("*")
+      .neq("status", "priority")
       .order("sort_order", { ascending: true });
 
     if (error) {
@@ -26,7 +27,25 @@ function KPIManagement() {
       return;
     }
 
-    setKpis(data || []);
+    // Put Active KPIs first, then Hidden KPIs.
+    // Each group keeps the sort_order from Supabase.
+    const sortedKPIs = [...(data || [])].sort((a, b) => {
+      const statusOrder = {
+        active: 1,
+        hidden: 2,
+      };
+
+      const statusA = statusOrder[a.status] || 99;
+      const statusB = statusOrder[b.status] || 99;
+
+      if (statusA !== statusB) {
+        return statusA - statusB;
+      }
+
+      return (a.sort_order ?? 999999) - (b.sort_order ?? 999999);
+    });
+
+    setKpis(sortedKPIs);
     setLoading(false);
   }
 
@@ -34,10 +53,9 @@ function KPIManagement() {
     <div className="page-container">
 
       {/* Page Header */}
-		<div className="page-header">
-		  <h1>Implementation Team KPI Guidelines</h1>
-		</div>
-
+      <div className="page-header">
+        <h1>Implementation Team KPI Guidelines</h1>
+      </div>
 
       {/* Loading */}
       {loading && (

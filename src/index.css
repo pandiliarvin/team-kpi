@@ -1918,15 +1918,13 @@ button {
   from {
     opacity: 0;
 
-    transform:
-      translateY(12px);
+    transform: translateY(12px);
   }
 
   to {
     opacity: 1;
 
-    transform:
-      translateY(0);
+    transform: translateY(0);
   }
 }
 
@@ -2218,6 +2216,10 @@ button {
   font-size: 12px;
 }
 
+
+
+
+
 /* =========================================================
    DASHBOARD
 ========================================================= */
@@ -2227,7 +2229,7 @@ button {
 }
 
 /* =========================================================
-   HEADER
+   DASHBOARD HEADER
 ========================================================= */
 
 .dashboard-header {
@@ -2241,6 +2243,7 @@ button {
 
   font-size: 28px;
   font-weight: 700;
+
   line-height: 1.3;
 }
 
@@ -2291,13 +2294,13 @@ button {
   display: grid;
 
   grid-template-columns:
-    minmax(240px, 1.5fr)
+    minmax(220px, 1.2fr)
     minmax(180px, 1fr)
     minmax(180px, 1fr);
 
   gap: 16px;
 
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   padding: 20px;
 
   background: var(--surface);
@@ -2314,6 +2317,7 @@ button {
 
 .dashboard-filter-field {
   display: flex;
+
   flex-direction: column;
 
   gap: 7px;
@@ -2341,6 +2345,7 @@ button {
   background: var(--surface);
 
   border: 1px solid var(--border);
+
   border-radius: 9px;
 
   color: var(--text-h);
@@ -2349,9 +2354,17 @@ button {
 
   outline: none;
 
+  cursor: pointer;
+
   transition:
     border-color 0.15s ease,
-    box-shadow 0.15s ease;
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.dashboard-filter-field select:hover,
+.dashboard-filter-field input:hover {
+  border-color: #d1d5db;
 }
 
 .dashboard-filter-field select:focus,
@@ -2363,180 +2376,23 @@ button {
 }
 
 /* =========================================================
-   MONTH PICKER
+   DATE RANGE ERROR
 ========================================================= */
 
-.dashboard-month-picker {
-  margin-bottom: 24px;
-  padding: 20px;
+.dashboard-date-error {
+  margin-bottom: 20px;
 
-  background: var(--surface);
+  padding: 12px 16px;
 
-  border: 1px solid var(--border);
-  border-radius: 16px;
-}
+  background: #fef2f2;
 
-.dashboard-month-picker-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  border: 1px solid #fecaca;
 
-  gap: 20px;
-
-  margin-bottom: 16px;
-}
-
-.dashboard-month-picker-header h3 {
-  margin: 0;
-
-  color: var(--text-h);
-
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.dashboard-month-picker-header p {
-  margin: 4px 0 0;
-
-  color: var(--text);
-
-  font-size: 12px;
-}
-
-.dashboard-month-range {
-  flex-shrink: 0;
-
-  padding: 7px 11px;
-
-  background: var(--accent-light);
-
-  border: 1px solid #bbf7d0;
-  border-radius: 8px;
-
-  color: #166534;
-
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* =========================================================
-   MONTH BOX LIST
-========================================================= */
-
-.dashboard-month-list {
-  display: flex;
-
-  gap: 8px;
-
-  width: 100%;
-
-  overflow-x: auto;
-
-  padding: 3px 2px 8px;
-}
-
-/* =========================================================
-   MONTH BOX
-========================================================= */
-
-.dashboard-month-box {
-  position: relative;
-
-  flex: 0 0 82px;
-
-  min-height: 72px;
-
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-
-  padding: 8px;
-
-  background: #ffffff;
-
-  border: 1px solid #e5e7eb;
   border-radius: 10px;
 
-  color: var(--text);
+  color: #b91c1c;
 
-  cursor: pointer;
-
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.dashboard-month-box:hover {
-  background: #f9fafb;
-
-  border-color: #bbf7d0;
-
-  color: var(--text-h);
-
-  transform: translateY(-1px);
-}
-
-.dashboard-month-box-selected {
-  background: var(--accent-light);
-
-  border-color: #86efac;
-
-  color: #166534;
-}
-
-.dashboard-month-box-selected:hover {
-  background: var(--accent-light);
-
-  border-color: #4ade80;
-}
-
-/* =========================================================
-   MONTH TEXT
-========================================================= */
-
-.dashboard-month-name {
   font-size: 14px;
-
-  font-weight: 600;
-
-  line-height: 1.2;
-}
-
-.dashboard-month-year {
-  margin-top: 3px;
-
-  color: #9ca3af;
-
-  font-size: 11px;
-}
-
-.dashboard-month-box-selected
-  .dashboard-month-year {
-  color: #4ade80;
-}
-
-/* =========================================================
-   FROM / TO INDICATOR
-========================================================= */
-
-.dashboard-month-tag {
-  position: absolute;
-
-  top: 5px;
-  right: 6px;
-
-  color: #16a34a;
-
-  font-size: 8px;
-  font-weight: 700;
-
-  letter-spacing: 0.03em;
-
-  text-transform: uppercase;
 }
 
 /* =========================================================
@@ -2564,20 +2420,12 @@ button {
 }
 
 .dashboard-section-header {
-  margin-bottom: 18px;
-}
-
-.dashboard-section-header h2 {
-  margin: 0;
-
-  color: var(--text-h);
-
-  font-size: 20px;
-  font-weight: 600;
+	margin-top: 20px;
+  margin-bottom: 20px;
 }
 
 .dashboard-section-header p {
-  margin: 5px 0 0;
+  margin: 0;
 
   color: var(--text);
 
@@ -2605,8 +2453,13 @@ button {
   background: var(--surface);
 
   border: 1px solid var(--border);
+
   border-radius: 16px;
 }
+
+/* =========================================================
+   KPI CHART HEADER
+========================================================= */
 
 .dashboard-kpi-header {
   margin-bottom: 10px;
@@ -2618,6 +2471,7 @@ button {
   color: var(--text-h);
 
   font-size: 17px;
+
   font-weight: 600;
 }
 
@@ -2670,18 +2524,23 @@ button {
   stroke-width: 3;
 
   stroke-linecap: round;
+
   stroke-linejoin: round;
 }
 
 .dashboard-chart-target {
   stroke: #9ca3af;
+
   stroke-width: 2;
+
   stroke-dasharray: 6 5;
 }
 
 .dashboard-chart-target-label {
   fill: #6b7280;
+
   font-size: 11px;
+
   font-weight: 600;
 }
 
@@ -2697,6 +2556,7 @@ button {
   fill: var(--text-h);
 
   font-size: 12px;
+
   font-weight: 600;
 }
 
@@ -2724,23 +2584,10 @@ button {
   background: #fef2f2;
 
   border: 1px solid #fecaca;
+
   border-radius: 12px;
 
   color: #b91c1c;
-}
-
-.dashboard-date-error {
-  margin-bottom: 20px;
-  padding: 12px 16px;
-
-  background: #fef2f2;
-
-  border: 1px solid #fecaca;
-  border-radius: 10px;
-
-  color: #b91c1c;
-
-  font-size: 14px;
 }
 
 .dashboard-no-member,
@@ -2751,6 +2598,7 @@ button {
   background: var(--surface);
 
   border: 1px solid var(--border);
+
   border-radius: 16px;
 
   color: var(--text);
@@ -2767,6 +2615,7 @@ button {
   height: 42px;
 
   display: flex;
+
   align-items: center;
   justify-content: center;
 
@@ -2799,23 +2648,16 @@ button {
    RESPONSIVE
 ========================================================= */
 
+@media (max-width: 1100px) {
+  .dashboard-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .dashboard-filter-card,
   .dashboard-filter-card-user {
     grid-template-columns: 1fr;
-  }
-
-  .dashboard-kpi-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-month-picker-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .dashboard-month-range {
-    align-self: flex-start;
   }
 }
 
@@ -2826,18 +2668,9 @@ button {
 
   .dashboard-welcome,
   .dashboard-kpi-card,
-  .dashboard-filter-card,
-  .dashboard-month-picker {
+  .dashboard-filter-card {
     padding: 16px;
   }
-
-  .dashboard-month-box {
-    flex-basis: 72px;
-
-    min-height: 68px;
-  }
-
-  .dashboard-month-list {
-    gap: 6px;
-  }
 }
+
+
