@@ -13,20 +13,27 @@ function MonthlyKPIScores() {
 
   const [selectedMember, setSelectedMember] = useState("");
 
+  const now = new Date();
+
   const [month, setMonth] = useState(
-    new Date().getMonth() + 1
+    now.getMonth() === 0
+      ? 12
+      : now.getMonth()
   );
 
   const [year, setYear] = useState(
-    new Date().getFullYear()
+    now.getMonth() === 0
+      ? now.getFullYear() - 1
+      : now.getFullYear()
   );
 
   // --------------------------------------------------
-  // Available months for selected member/year
+  // Earliest month with available data
+  // for the selected member
   // --------------------------------------------------
 
-  const [availableMonths, setAvailableMonths] =
-    useState([]);
+  const [oldestAvailableDate, setOldestAvailableDate] =
+    useState(null);
 
   const [loadingMonths, setLoadingMonths] =
     useState(false);
@@ -115,7 +122,6 @@ function MonthlyKPIScores() {
       await fetchAllMembers();
 
       // No member selected initially.
-      // Super Admin chooses from dropdown.
     }
 
     // ------------------------------------------------
@@ -301,110 +307,269 @@ function MonthlyKPIScores() {
   }
 
   // ==================================================
-  // LOAD AVAILABLE MONTHS
+  // LOAD EARLIEST AVAILABLE MONTH
   // ==================================================
   //
-  // Only months where the selected member has at
-  // least one KPI score for the selected year.
+  // Find the oldest month/year where the selected
+  // member has at least one KPI score with a value.
   //
-  // A score of 0 is considered a valid value.
+  // We do NOT limit this to the selected year.
+  //
+  // This allows us to build a continuous range from
+  // the first available month through the month before
+  // the current month.
   //
   // ==================================================
 
   useEffect(() => {
-    if (!selectedMember || !year) {
-      setAvailableMonths([]);
+    if (!selectedMember) {
+      setOldestAvailableDate(null);
       return;
     }
 
-    loadAvailableMonths();
-  }, [
-    selectedMember,
-    year,
-  ]);
+    loadOldestAvailableDate();
+  }, [selectedMember]);
 
-  async function loadAvailableMonths() {
+  async function loadOldestAvailableDate() {
     setLoadingMonths(true);
 
     const { data, error } = await supabase
       .from("monthly_kpi_scores")
-      .select("month, value")
+      .select("month, year, value")
       .eq(
         "member_id",
         selectedMember
-      )
-      .eq(
-        "year",
-        Number(year)
       )
       .not(
         "value",
         "is",
         null
-      );
+      )
+      .order("year", {
+        ascending: true,
+      })
+      .order("month", {
+        ascending: true,
+      })
+      .limit(1);
 
     if (error) {
       console.error(
-        "Error loading available months:",
+        "Error loading oldest available month:",
         error
       );
 
-      setAvailableMonths([]);
+      setOldestAvailableDate(null);
       setLoadingMonths(false);
       return;
     }
 
+    if (!data || data.length === 0) {
+      setOldestAvailableDate(null);
+      setLoadingMonths(false);
+      return;
+    }
+
+    const oldest = data[0];
+
+    const oldestDate = {
+      month: Number(oldest.month),
+      year: Number(oldest.year),
+    };
+
+    setOldestAvailableDate(oldestDate);
+
     // ------------------------------------------------
-    // Get unique months
+    // Set the selected date to the most recent
+    // allowable month if the current selection
+    // is outside the available range.
     // ------------------------------------------------
 
-    const uniqueMonths = [
-      ...new Set(
-        (data || [])
-          .map(
-            (score) =>
-              Number(score.month)
-          )
-          .filter(
-            (monthValue) =>
-              !Number.isNaN(monthValue)
-          )
-      ),
-    ].sort(
-      (a, b) => a - b
+    const previousCurrentMonthDate = getPreviousCurrentMonth();
+
+    const oldestKey = monthKey(
+      oldestDate.month,
+      oldestDate.year
     );
 
-    setAvailableMonths(
-      uniqueMonths
+    const latestKey = monthKey(
+      previousCurrentMonthDate.month,
+      previousCurrentMonthDate.year
     );
 
-    // ------------------------------------------------
-    // Keep current month if it exists.
-    //
-    // Otherwise automatically select the first
-    // available month.
-    // ------------------------------------------------
+    const selectedKey = monthKey(
+      Number(month),
+      Number(year)
+    );
 
     if (
-      uniqueMonths.length > 0
+      selectedKey < oldestKey ||
+      selectedKey > latestKey
     ) {
       setMonth(
-        (currentMonth) => {
-          if (
-            uniqueMonths.includes(
-              Number(currentMonth)
-            )
-          ) {
-            return currentMonth;
-          }
+        previousCurrentMonthDate.month
+      );
 
-          return uniqueMonths[0];
-        }
+      setYear(
+        previousCurrentMonthDate.year
       );
     }
 
     setLoadingMonths(false);
   }
+
+  // --------------------------------------------------
+  // Get month/year key for comparisons
+  // --------------------------------------------------
+
+  function monthKey(monthValue, yearValue) {
+    return (
+      Number(yearValue) * 12 +
+      Number(monthValue)
+    );
+  }
+
+  // --------------------------------------------------
+  // Get the latest selectable date
+  //
+  // This is always the month BEFORE the current month.
+  // --------------------------------------------------
+
+  function getPreviousCurrentMonth() {
+    const currentMonth =
+      now.getMonth() + 1;
+
+    const currentYear =
+      now.getFullYear();
+
+    if (currentMonth === 1) {
+      return {
+        month: 12,
+        year: currentYear - 1,
+      };
+    }
+
+    return {
+      month: currentMonth - 1,
+      year: currentYear,
+    };
+  }
+
+  // ==================================================
+  // GENERATE MONTH OPTIONS FOR SELECTED YEAR
+  // ==================================================
+  //
+  // Example:
+  //
+  // Oldest data: May 2025
+  // Current date: August 2026
+  //
+  // 2025:
+  // May - December
+  //
+  // 2026:
+  // January - July
+  //
+  // Months with NO score are still included.
+  //
+  // ==================================================
+
+  function getAvailableMonthOptions() {
+    if (
+      !selectedMember ||
+      !oldestAvailableDate
+    ) {
+      return [];
+    }
+
+    const latestDate =
+      getPreviousCurrentMonth();
+
+    const oldestKey = monthKey(
+      oldestAvailableDate.month,
+      oldestAvailableDate.year
+    );
+
+    const latestKey = monthKey(
+      latestDate.month,
+      latestDate.year
+    );
+
+    const selectedYear =
+      Number(year);
+
+    const options = [];
+
+    for (
+      let monthValue = 1;
+      monthValue <= 12;
+      monthValue++
+    ) {
+      const optionKey = monthKey(
+        monthValue,
+        selectedYear
+      );
+
+      if (
+        optionKey >= oldestKey &&
+        optionKey <= latestKey
+      ) {
+        options.push({
+          value: monthValue,
+          label: new Date(
+            selectedYear,
+            monthValue - 1
+          ).toLocaleString(
+            "default",
+            {
+              month: "long",
+            }
+          ),
+        });
+      }
+    }
+
+    return options;
+  }
+
+  const availableMonthOptions =
+    getAvailableMonthOptions();
+
+  // ==================================================
+  // VALIDATE SELECTED DATE
+  // ==================================================
+
+  useEffect(() => {
+    if (
+      !selectedMember ||
+      !oldestAvailableDate
+    ) {
+      return;
+    }
+
+    const options =
+      getAvailableMonthOptions();
+
+    const monthExists =
+      options.some(
+        (option) =>
+          option.value ===
+          Number(month)
+      );
+
+    if (
+      !monthExists &&
+      options.length > 0
+    ) {
+      setMonth(
+        options[0].value
+      );
+    }
+  }, [
+    selectedMember,
+    year,
+    oldestAvailableDate,
+  ]);
 
   // ==================================================
   // LOAD CURRENT + PREVIOUS MONTH SCORES
@@ -418,24 +583,36 @@ function MonthlyKPIScores() {
       return;
     }
 
-    // Don't load a month that isn't available.
-    if (
-      availableMonths.length > 0 &&
-      !availableMonths.includes(
-        Number(month)
-      )
-    ) {
-      return;
-    }
-
-    // No available months means there is nothing
-    // to load.
-    if (
-      availableMonths.length === 0
-    ) {
+    if (!oldestAvailableDate) {
       setScores({});
       setOriginalScores({});
       setPreviousScores({});
+      return;
+    }
+
+    const currentKey = monthKey(
+      Number(month),
+      Number(year)
+    );
+
+    const oldestKey = monthKey(
+      oldestAvailableDate.month,
+      oldestAvailableDate.year
+    );
+
+    const latestDate =
+      getPreviousCurrentMonth();
+
+    const latestKey = monthKey(
+      latestDate.month,
+      latestDate.year
+    );
+
+    // Do not load outside the allowed range.
+    if (
+      currentKey < oldestKey ||
+      currentKey > latestKey
+    ) {
       return;
     }
 
@@ -444,7 +621,7 @@ function MonthlyKPIScores() {
     selectedMember,
     month,
     year,
-    availableMonths,
+    oldestAvailableDate,
   ]);
 
   async function loadScores() {
@@ -505,12 +682,12 @@ function MonthlyKPIScores() {
     // ----------------------------------------------
 
     const previousMonth =
-      month === 1
+      Number(month) === 1
         ? 12
         : Number(month) - 1;
 
     const previousYear =
-      month === 1
+      Number(month) === 1
         ? Number(year) - 1
         : Number(year);
 
@@ -709,11 +886,11 @@ function MonthlyKPIScores() {
     // Reload the scores
     await loadScores();
 
-    // Refresh available months.
+    // Refresh the oldest available date.
     //
-    // This is important if the user just created
-    // the first score for a previously empty month.
-    await loadAvailableMonths();
+    // This keeps the date range accurate if data
+    // has changed.
+    await loadOldestAvailableDate();
 
     window.dispatchEvent(
       new CustomEvent(
@@ -808,12 +985,12 @@ function MonthlyKPIScores() {
 
   function getPreviousMonthName() {
     const previousMonth =
-      month === 1
+      Number(month) === 1
         ? 12
         : Number(month) - 1;
 
     const previousYear =
-      month === 1
+      Number(month) === 1
         ? Number(year) - 1
         : Number(year);
 
@@ -833,7 +1010,7 @@ function MonthlyKPIScores() {
   // --------------------------------------------------
 
   function getPreviousMonthYear() {
-    return month === 1
+    return Number(month) === 1
       ? Number(year) - 1
       : Number(year);
   }
@@ -1159,61 +1336,6 @@ function MonthlyKPIScores() {
   }
 
   // --------------------------------------------------
-  // Month names
-  // --------------------------------------------------
-
-  const monthNames = [
-    {
-      value: 1,
-      label: "January",
-    },
-    {
-      value: 2,
-      label: "February",
-    },
-    {
-      value: 3,
-      label: "March",
-    },
-    {
-      value: 4,
-      label: "April",
-    },
-    {
-      value: 5,
-      label: "May",
-    },
-    {
-      value: 6,
-      label: "June",
-    },
-    {
-      value: 7,
-      label: "July",
-    },
-    {
-      value: 8,
-      label: "August",
-    },
-    {
-      value: 9,
-      label: "September",
-    },
-    {
-      value: 10,
-      label: "October",
-    },
-    {
-      value: 11,
-      label: "November",
-    },
-    {
-      value: 12,
-      label: "December",
-    },
-  ];
-
-  // --------------------------------------------------
   // Loading
   // --------------------------------------------------
 
@@ -1327,8 +1449,9 @@ function MonthlyKPIScores() {
                   event.target.value
                 );
 
-                // Clear old months immediately
-                setAvailableMonths([]);
+                setOldestAvailableDate(
+                  null
+                );
               }}
             >
 
@@ -1371,8 +1494,10 @@ function MonthlyKPIScores() {
           <select
             className="scores-select"
             value={
-              availableMonths.includes(
-                Number(month)
+              availableMonthOptions.some(
+                (option) =>
+                  option.value ===
+                  Number(month)
               )
                 ? month
                 : ""
@@ -1380,7 +1505,8 @@ function MonthlyKPIScores() {
             disabled={
               !selectedMember ||
               loadingMonths ||
-              availableMonths.length === 0
+              !oldestAvailableDate ||
+              availableMonthOptions.length === 0
             }
             onChange={(
               event
@@ -1401,10 +1527,14 @@ function MonthlyKPIScores() {
               <option value="">
                 Loading months...
               </option>
-            ) : availableMonths.length ===
+            ) : !oldestAvailableDate ? (
+              <option value="">
+                No previous scores found
+              </option>
+            ) : availableMonthOptions.length ===
               0 ? (
               <option value="">
-                No months with scores
+                No months available
               </option>
             ) : (
               <>
@@ -1412,29 +1542,22 @@ function MonthlyKPIScores() {
                   Select Month
                 </option>
 
-                {monthNames
-                  .filter(
-                    (monthOption) =>
-                      availableMonths.includes(
+                {availableMonthOptions.map(
+                  (monthOption) => (
+                    <option
+                      key={
                         monthOption.value
-                      )
+                      }
+                      value={
+                        monthOption.value
+                      }
+                    >
+                      {
+                        monthOption.label
+                      }
+                    </option>
                   )
-                  .map(
-                    (monthOption) => (
-                      <option
-                        key={
-                          monthOption.value
-                        }
-                        value={
-                          monthOption.value
-                        }
-                      >
-                        {
-                          monthOption.label
-                        }
-                      </option>
-                    )
-                  )}
+                )}
               </>
             )}
 
@@ -1454,6 +1577,19 @@ function MonthlyKPIScores() {
             className="scores-input"
             type="number"
             value={year}
+            min={
+              oldestAvailableDate
+                ?.year ?? 1900
+            }
+            max={
+              getPreviousCurrentMonth()
+                .year
+            }
+            disabled={
+              !selectedMember ||
+              loadingMonths ||
+              !oldestAvailableDate
+            }
             onChange={(
               event
             ) => {
@@ -1465,10 +1601,6 @@ function MonthlyKPIScores() {
               setYear(
                 newYear
               );
-
-              // Clear months while the
-              // new year is being checked.
-              setAvailableMonths([]);
             }}
           />
 
@@ -1503,13 +1635,12 @@ function MonthlyKPIScores() {
         )}
 
       {/* ------------------------------------------ */}
-      {/* NO SCORES FOR YEAR */}
+      {/* NO PREVIOUS DATA */}
       {/* ------------------------------------------ */}
 
       {selectedMember &&
         !loadingMonths &&
-        availableMonths.length ===
-          0 && (
+        !oldestAvailableDate && (
           <div className="scores-empty">
 
             <div className="scores-empty-icon">
@@ -1523,8 +1654,7 @@ function MonthlyKPIScores() {
             <p>
               There are no KPI scores
               recorded for{" "}
-              {getSelectedMemberName()}{" "}
-              in {year}.
+              {getSelectedMemberName()}.
             </p>
 
           </div>
@@ -1535,10 +1665,12 @@ function MonthlyKPIScores() {
       {/* ------------------------------------------ */}
 
       {selectedMember &&
-        availableMonths.length >
-          0 &&
-        availableMonths.includes(
-          Number(month)
+        oldestAvailableDate &&
+        availableMonthOptions.length > 0 &&
+        availableMonthOptions.some(
+          (option) =>
+            option.value ===
+            Number(month)
         ) && (
           <>
 
