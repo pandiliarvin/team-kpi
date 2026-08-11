@@ -80,7 +80,7 @@ function UpdatePassword() {
         <div className="login-branding">
 
           <h1>
-            IS Team KPI App
+            IS KPI Portal
           </h1>
 
           <p>
@@ -198,7 +198,7 @@ function UpdatePassword() {
         {/* Footer */}
 
         <div className="login-footer">
-          IS Team KPI App
+          TalentPop {new Date().getFullYear()}
         </div>
 
       </div>

@@ -64,7 +64,7 @@ function ResetPassword() {
         <div className="login-branding">
 
           <h1>
-            IS Team KPI App
+            IS KPI Portal
           </h1>
 
           <p>
@@ -171,7 +171,7 @@ function ResetPassword() {
         {/* Footer */}
 
         <div className="login-footer">
-          IS Team KPI App
+          TalentPop {new Date().getFullYear()}
         </div>
 
       </div>
