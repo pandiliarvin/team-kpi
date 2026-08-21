@@ -79,9 +79,10 @@ function KPIManagement() {
               <tr>
                 <th>KPI Name</th>
                 <th>Description</th>
-                <th>Target</th>
-                <th>Unit</th>
-                <th>Direction</th>
+                <th className="text-center">Target</th>
+                <th className="text-center">Unit</th>
+                <th className="text-center">Direction</th>
+                <th className="text-center">Weight</th>
               </tr>
             </thead>
 
@@ -89,7 +90,7 @@ function KPIManagement() {
               {kpis.length === 0 ? (
                 <tr>
                   <td
-                    colSpan="5"
+                    colSpan="6"
                     className="kpi-empty"
                   >
                     No KPIs found.
@@ -110,17 +111,17 @@ function KPIManagement() {
                     </td>
 
                     {/* Target */}
-                    <td>
+                    <td className="text-center">
                       {kpi.target_value}
                     </td>
 
                     {/* Unit */}
-                    <td>
+                    <td className="text-center">
                       {kpi.unit || "-"}
                     </td>
 
                     {/* Direction */}
-                    <td>
+                    <td className="text-center">
                       <span
                         className={
                           kpi.higher_is_better
@@ -132,6 +133,11 @@ function KPIManagement() {
                           ? "Higher is better"
                           : "Lower is better"}
                       </span>
+                    </td>
+
+                    {/* Weight */}
+                    <td className="text-center">
+                      {kpi.weight ?? "-"}
                     </td>
 
                   </tr>

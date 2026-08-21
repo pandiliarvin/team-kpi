@@ -29,7 +29,6 @@ function MonthlyKPIScores() {
 
   // --------------------------------------------------
   // Earliest month with available data
-  // for the selected member
   // --------------------------------------------------
 
   const [oldestAvailableDate, setOldestAvailableDate] =
@@ -69,7 +68,7 @@ function MonthlyKPIScores() {
   }
 
   // --------------------------------------------------
-  // Automatically hide notification after 5 seconds
+  // Automatically hide notification
   // --------------------------------------------------
 
   useEffect(() => {
@@ -86,9 +85,9 @@ function MonthlyKPIScores() {
     };
   }, [notification]);
 
-  // --------------------------------------------------
-  // Initialize
-  // --------------------------------------------------
+  // ==================================================
+  // INITIALIZE
+  // ==================================================
 
   useEffect(() => {
     if (!user) {
@@ -115,31 +114,24 @@ function MonthlyKPIScores() {
 
     // ------------------------------------------------
     // Super Admin
-    // Can view/edit everyone
     // ------------------------------------------------
 
     if (member.role === "Super Admin") {
       await fetchAllMembers();
-
-      // No member selected initially.
     }
 
     // ------------------------------------------------
     // Admin
-    // Can view own scores + team scores
-    // Can edit team members
     // ------------------------------------------------
 
     else if (member.role === "Admin") {
       await fetchTeamMembers(member.member_id);
 
-      // Admin initially views their own scores
       setSelectedMember(member.member_id);
     }
 
     // ------------------------------------------------
     // Regular User
-    // Can only view own scores
     // ------------------------------------------------
 
     else {
@@ -149,9 +141,9 @@ function MonthlyKPIScores() {
     setLoading(false);
   }
 
-  // --------------------------------------------------
-  // Get logged-in user's member record
-  // --------------------------------------------------
+  // ==================================================
+  // GET CURRENT MEMBER
+  // ==================================================
 
   async function getCurrentMember() {
     const { data, error } = await supabase
@@ -174,10 +166,9 @@ function MonthlyKPIScores() {
     return data;
   }
 
-  // --------------------------------------------------
-  // Load all members
-  // Super Admin only
-  // --------------------------------------------------
+  // ==================================================
+  // LOAD ALL MEMBERS
+  // ==================================================
 
   async function fetchAllMembers() {
     const { data, error } = await supabase
@@ -199,9 +190,9 @@ function MonthlyKPIScores() {
     setMembers(data || []);
   }
 
-  // --------------------------------------------------
-  // Load Team Lead's members + own record
-  // --------------------------------------------------
+  // ==================================================
+  // LOAD TEAM MEMBERS
+  // ==================================================
 
   async function fetchTeamMembers(teamLeadId) {
     const { data, error } = await supabase
@@ -226,17 +217,17 @@ function MonthlyKPIScores() {
     setMembers(data || []);
   }
 
-  // --------------------------------------------------
-  // Load KPIs
+  // ==================================================
+  // LOAD KPIs
   // Active first, then Priority
-  // Hidden KPIs are excluded
-  // --------------------------------------------------
+  // Hidden excluded
+  // ==================================================
 
   async function fetchKPIs() {
     const { data, error } = await supabase
       .from("kpis")
       .select(
-        "kpi_id, name, unit, target_value, higher_is_better, sort_order, status"
+        "kpi_id, name, unit, target_value, higher_is_better, sort_order, status, weight"
       )
       .in("status", ["active", "priority"])
       .order("sort_order", {
@@ -252,8 +243,6 @@ function MonthlyKPIScores() {
       return;
     }
 
-    // Active KPIs first.
-    // Priority KPIs second.
     const sortedKPIs = (data || []).sort(
       (a, b) => {
         const statusOrder = {
@@ -279,9 +268,9 @@ function MonthlyKPIScores() {
     setKpis(sortedKPIs);
   }
 
-  // --------------------------------------------------
-  // Determine whether selected member can be edited
-  // --------------------------------------------------
+  // ==================================================
+  // PERMISSION
+  // ==================================================
 
   function canEditSelectedMember() {
     if (!selectedMember || !currentMember) {
@@ -293,7 +282,7 @@ function MonthlyKPIScores() {
       return true;
     }
 
-    // Admin can edit their team members,
+    // Admin can edit team members,
     // but cannot edit their own scores
     if (role === "Admin") {
       return (
@@ -307,18 +296,38 @@ function MonthlyKPIScores() {
   }
 
   // ==================================================
-  // LOAD EARLIEST AVAILABLE MONTH
+  // ADMIN / SUPER ADMIN CHECK
   // ==================================================
-  //
-  // Find the oldest month/year where the selected
-  // member has at least one KPI score with a value.
-  //
-  // We do NOT limit this to the selected year.
-  //
-  // This allows us to build a continuous range from
-  // the first available month through the month before
-  // the current month.
-  //
+
+  function canSeeCalculatedScore() {
+    return (
+      role === "Admin" ||
+      role === "Super Admin"
+    );
+  }
+
+  function canSeeRawScore() {
+    return (
+      role === "Admin" ||
+      role === "Super Admin"
+    );
+  }
+
+  // ==================================================
+  // IDENTIFY MONTHLY SCORE KPI
+  // ==================================================
+
+  function isMonthlyScore(kpi) {
+    return (
+      kpi.name
+        ?.trim()
+        .toLowerCase() ===
+      "monthly score"
+    );
+  }
+
+  // ==================================================
+  // LOAD EARLIEST AVAILABLE MONTH
   // ==================================================
 
   useEffect(() => {
@@ -379,13 +388,8 @@ function MonthlyKPIScores() {
 
     setOldestAvailableDate(oldestDate);
 
-    // ------------------------------------------------
-    // Set the selected date to the most recent
-    // allowable month if the current selection
-    // is outside the available range.
-    // ------------------------------------------------
-
-    const previousCurrentMonthDate = getPreviousCurrentMonth();
+    const previousCurrentMonthDate =
+      getPreviousCurrentMonth();
 
     const oldestKey = monthKey(
       oldestDate.month,
@@ -418,22 +422,23 @@ function MonthlyKPIScores() {
     setLoadingMonths(false);
   }
 
-  // --------------------------------------------------
-  // Get month/year key for comparisons
-  // --------------------------------------------------
+  // ==================================================
+  // MONTH KEY
+  // ==================================================
 
-  function monthKey(monthValue, yearValue) {
+  function monthKey(
+    monthValue,
+    yearValue
+  ) {
     return (
       Number(yearValue) * 12 +
       Number(monthValue)
     );
   }
 
-  // --------------------------------------------------
-  // Get the latest selectable date
-  //
-  // This is always the month BEFORE the current month.
-  // --------------------------------------------------
+  // ==================================================
+  // PREVIOUS CURRENT MONTH
+  // ==================================================
 
   function getPreviousCurrentMonth() {
     const currentMonth =
@@ -456,22 +461,7 @@ function MonthlyKPIScores() {
   }
 
   // ==================================================
-  // GENERATE MONTH OPTIONS FOR SELECTED YEAR
-  // ==================================================
-  //
-  // Example:
-  //
-  // Oldest data: May 2025
-  // Current date: August 2026
-  //
-  // 2025:
-  // May - December
-  //
-  // 2026:
-  // January - July
-  //
-  // Months with NO score are still included.
-  //
+  // MONTH OPTIONS
   // ==================================================
 
   function getAvailableMonthOptions() {
@@ -536,7 +526,7 @@ function MonthlyKPIScores() {
     getAvailableMonthOptions();
 
   // ==================================================
-  // VALIDATE SELECTED DATE
+  // VALIDATE DATE
   // ==================================================
 
   useEffect(() => {
@@ -572,7 +562,7 @@ function MonthlyKPIScores() {
   ]);
 
   // ==================================================
-  // LOAD CURRENT + PREVIOUS MONTH SCORES
+  // LOAD CURRENT + PREVIOUS SCORES
   // ==================================================
 
   useEffect(() => {
@@ -608,7 +598,6 @@ function MonthlyKPIScores() {
       latestDate.year
     );
 
-    // Do not load outside the allowed range.
     if (
       currentKey < oldestKey ||
       currentKey > latestKey
@@ -625,10 +614,6 @@ function MonthlyKPIScores() {
   ]);
 
   async function loadScores() {
-    // ----------------------------------------------
-    // Load current month
-    // ----------------------------------------------
-
     const {
       data,
       error,
@@ -669,17 +654,12 @@ function MonthlyKPIScores() {
       }
     );
 
-    setScores(
-      existingScores
-    );
+    setScores(existingScores);
+    setOriginalScores(existingScores);
 
-    setOriginalScores(
-      existingScores
-    );
-
-    // ----------------------------------------------
-    // Calculate previous month
-    // ----------------------------------------------
+    // ------------------------------------------------
+    // Previous month
+    // ------------------------------------------------
 
     const previousMonth =
       Number(month) === 1
@@ -690,10 +670,6 @@ function MonthlyKPIScores() {
       Number(month) === 1
         ? Number(year) - 1
         : Number(year);
-
-    // ----------------------------------------------
-    // Load previous month scores
-    // ----------------------------------------------
 
     const {
       data: previousData,
@@ -741,9 +717,303 @@ function MonthlyKPIScores() {
     );
   }
 
-  // --------------------------------------------------
-  // Detect unsaved changes
-  // --------------------------------------------------
+  // ==================================================
+  // FORMAT ALL NUMBERS TO 2 DECIMALS
+  // ==================================================
+
+  function formatNumber(value) {
+    if (
+      value === null ||
+      value === undefined ||
+      value === ""
+    ) {
+      return "";
+    }
+
+    const number = Number(value);
+
+    if (
+      Number.isNaN(number)
+    ) {
+      return value;
+    }
+
+    return number.toFixed(2);
+  }
+
+  // ==================================================
+  // HANDLE SCORE INPUT
+  // ==================================================
+
+  function updateScore(
+    kpiId,
+    value
+  ) {
+    setScores(
+      (previousScores) => ({
+        ...previousScores,
+        [kpiId]: value,
+      })
+    );
+  }
+
+  // ==================================================
+  // RAW SCORE CALCULATION
+  // ==================================================
+
+  function getRawScore(kpi) {
+    // Monthly Score does not have a raw score
+    if (isMonthlyScore(kpi)) {
+      return null;
+    }
+
+    const actualScore =
+      scores[kpi.kpi_id];
+
+    if (
+      actualScore === undefined ||
+      actualScore === ""
+    ) {
+      return null;
+    }
+
+    const value =
+      Number(actualScore);
+
+    if (
+      Number.isNaN(value)
+    ) {
+      return null;
+    }
+
+    const name =
+      kpi.name
+        ?.trim()
+        .toLowerCase();
+
+    // ------------------------------------------------
+    // Attendance
+    // ------------------------------------------------
+
+    if (
+      name === "attendance"
+    ) {
+      if (value >= 100) return 5;
+      if (value >= 96) return 4.5;
+      if (value >= 91) return 4;
+      if (value >= 86) return 3.5;
+      if (value >= 81) return 3;
+      if (value >= 76) return 2.5;
+      if (value >= 71) return 2;
+      if (value >= 65) return 1.5;
+
+      return 1;
+    }
+
+    // ------------------------------------------------
+    // Idle Percentage
+    //
+    // 5    = 0%
+    // 4.5  = 0.01 - 0.50%
+    // 4    = 0.51 - 1.00%
+    // 3.5  = 1.01 - 2.00%
+    // 2.5  = 2.01 - 2.99%
+    // 2    = 3.00%
+    // 1    = above 3.00%
+    // ------------------------------------------------
+
+    if (
+      name === "idle percentage"
+    ) {
+      if (value === 0) return 5;
+      if (value <= 0.5) return 4.5;
+      if (value <= 1) return 4;
+      if (value <= 2) return 3.5;
+      if (value < 3) return 2.5;
+      if (value === 3) return 2;
+
+      return 1;
+    }
+
+    // ------------------------------------------------
+    // Activity Rate
+    // ------------------------------------------------
+
+    if (
+      name === "activity rate"
+    ) {
+      if (value >= 61) return 5;
+      if (value >= 56) return 4.5;
+      if (value >= 51) return 4;
+      if (value >= 46) return 3.5;
+      if (value >= 41) return 3;
+      if (value >= 36) return 2.5;
+      if (value >= 31) return 2;
+      if (value >= 21) return 1.5;
+
+      return 1;
+    }
+
+    // ------------------------------------------------
+    // Behavior
+    // ------------------------------------------------
+
+    if (
+      name === "behavior"
+    ) {
+      return value;
+    }
+
+    // ------------------------------------------------
+    // Communication
+    // ------------------------------------------------
+
+    if (
+      name === "communication"
+    ) {
+      return value;
+    }
+
+    // ------------------------------------------------
+    // QA
+    // ------------------------------------------------
+
+    if (
+      name === "qa"
+    ) {
+      if (value >= 100) return 5;
+      if (value >= 96) return 4.5;
+      if (value >= 91) return 4;
+      if (value >= 86) return 3.5;
+      if (value >= 81) return 3;
+      if (value >= 76) return 2.5;
+      if (value >= 71) return 2;
+      if (value >= 65) return 1.5;
+
+      return 1;
+    }
+
+    // ------------------------------------------------
+    // Fallback
+    //
+    // If a KPI is already scored 1-5,
+    // use its actual value as its raw score.
+    // ------------------------------------------------
+
+    return value;
+  }
+
+  // ==================================================
+  // CALCULATED SCORE FOR INDIVIDUAL KPI
+  //
+  // Raw Score / 5 * Weight
+  // ==================================================
+
+  function getCalculatedScore(kpi) {
+    if (
+      isMonthlyScore(kpi)
+    ) {
+      return null;
+    }
+
+    const rawScore =
+      getRawScore(kpi);
+
+    const weight =
+      Number(kpi.weight);
+
+    if (
+      rawScore === null ||
+      Number.isNaN(weight)
+    ) {
+      return null;
+    }
+
+    return (
+      (Number(rawScore) / 5) *
+      weight
+    );
+  }
+
+  // ==================================================
+  // TOTAL CALCULATED MONTHLY SCORE
+  //
+  // Adds all calculated KPI scores above
+  // Monthly Score.
+  // ==================================================
+
+  function getTotalCalculatedScore() {
+    let total = 0;
+    let hasScore = false;
+
+    for (const kpi of kpis) {
+      // Do not include Monthly Score itself
+      if (
+        isMonthlyScore(kpi)
+      ) {
+        continue;
+      }
+
+      const calculated =
+        getCalculatedScore(kpi);
+
+      if (
+        calculated !== null &&
+        !Number.isNaN(calculated)
+      ) {
+        total += calculated;
+        hasScore = true;
+      }
+    }
+
+    if (!hasScore) {
+      return null;
+    }
+
+    return total;
+  }
+
+  // ==================================================
+  // COPY CALCULATED SCORE TO MONTHLY SCORE
+  // ==================================================
+
+  function copyCalculatedScore() {
+    const total =
+      getTotalCalculatedScore();
+
+    if (total === null) {
+      showNotification(
+        "There is no calculated score to copy yet.",
+        "error"
+      );
+
+      return;
+    }
+
+    const monthlyScoreKPI =
+      kpis.find(
+        (kpi) =>
+          isMonthlyScore(kpi)
+      );
+
+    if (!monthlyScoreKPI) {
+      return;
+    }
+
+    updateScore(
+      monthlyScoreKPI.kpi_id,
+      formatNumber(total)
+    );
+
+    showNotification(
+      "Calculated score copied to Monthly Score.",
+      "success"
+    );
+  }
+
+  // ==================================================
+  // DETECT UNSAVED CHANGES
+  // ==================================================
 
   useEffect(() => {
     const scoresChanged =
@@ -771,25 +1041,9 @@ function MonthlyKPIScores() {
     currentMember,
   ]);
 
-  // --------------------------------------------------
-  // Update score
-  // --------------------------------------------------
-
-  function updateScore(
-    kpiId,
-    value
-  ) {
-    setScores(
-      (previousScores) => ({
-        ...previousScores,
-        [kpiId]: value,
-      })
-    );
-  }
-
-  // --------------------------------------------------
-  // Save scores
-  // --------------------------------------------------
+  // ==================================================
+  // SAVE SCORES
+  // ==================================================
 
   async function saveScores() {
     if (!selectedMember) {
@@ -883,13 +1137,7 @@ function MonthlyKPIScores() {
       return;
     }
 
-    // Reload the scores
     await loadScores();
-
-    // Refresh the oldest available date.
-    //
-    // This keeps the date range accurate if data
-    // has changed.
     await loadOldestAvailableDate();
 
     window.dispatchEvent(
@@ -909,9 +1157,9 @@ function MonthlyKPIScores() {
     );
   }
 
-  // --------------------------------------------------
-  // Discard unsaved changes
-  // --------------------------------------------------
+  // ==================================================
+  // DISCARD UNSAVED CHANGES
+  // ==================================================
 
   useEffect(() => {
     function handleDiscardChanges() {
@@ -935,13 +1183,11 @@ function MonthlyKPIScores() {
     originalScores,
   ]);
 
-  // --------------------------------------------------
-  // Get selected member name
-  // --------------------------------------------------
+  // ==================================================
+  // SELECTED MEMBER NAME
+  // ==================================================
 
   function getSelectedMemberName() {
-    // If viewing the logged-in user's own scores,
-    // use currentMember directly.
     if (
       currentMember &&
       selectedMember ===
@@ -950,7 +1196,6 @@ function MonthlyKPIScores() {
       return currentMember.name;
     }
 
-    // Otherwise find selected member
     const selected =
       members.find(
         (member) =>
@@ -963,9 +1208,9 @@ function MonthlyKPIScores() {
     );
   }
 
-  // --------------------------------------------------
-  // Get month name
-  // --------------------------------------------------
+  // ==================================================
+  // MONTH NAME
+  // ==================================================
 
   function getMonthName() {
     return new Date(
@@ -979,9 +1224,9 @@ function MonthlyKPIScores() {
     );
   }
 
-  // --------------------------------------------------
-  // Get previous month name
-  // --------------------------------------------------
+  // ==================================================
+  // PREVIOUS MONTH NAME
+  // ==================================================
 
   function getPreviousMonthName() {
     const previousMonth =
@@ -1005,9 +1250,9 @@ function MonthlyKPIScores() {
     );
   }
 
-  // --------------------------------------------------
-  // Get previous month year
-  // --------------------------------------------------
+  // ==================================================
+  // PREVIOUS MONTH YEAR
+  // ==================================================
 
   function getPreviousMonthYear() {
     return Number(month) === 1
@@ -1015,30 +1260,9 @@ function MonthlyKPIScores() {
       : Number(year);
   }
 
-  // --------------------------------------------------
-  // Format numbers
-  // --------------------------------------------------
-
-  function formatNumber(value) {
-    const number =
-      Number(value);
-
-    if (
-      Number.isNaN(number)
-    ) {
-      return value;
-    }
-
-    return Number.isInteger(
-      number
-    )
-      ? number
-      : number.toFixed(2);
-  }
-
-  // --------------------------------------------------
-  // Check if KPI is Idle Percentage
-  // --------------------------------------------------
+  // ==================================================
+  // IDLE PERCENTAGE
+  // ==================================================
 
   function isIdlePercentage(kpi) {
     return (
@@ -1049,9 +1273,9 @@ function MonthlyKPIScores() {
     );
   }
 
-  // --------------------------------------------------
-  // Target remark
-  // --------------------------------------------------
+  // ==================================================
+  // TARGET REMARK
+  // ==================================================
 
   function getTargetRemark(kpi) {
     const score =
@@ -1094,10 +1318,6 @@ function MonthlyKPIScores() {
     const idlePercentage =
       isIdlePercentage(kpi);
 
-    // ----------------------------------------------
-    // Exactly at target
-    // ----------------------------------------------
-
     if (
       difference === 0
     ) {
@@ -1107,13 +1327,6 @@ function MonthlyKPIScores() {
         arrow: "✓",
       };
     }
-
-    // ----------------------------------------------
-    // Idle Percentage
-    //
-    // Below target = good
-    // Above target = bad
-    // ----------------------------------------------
 
     if (
       idlePercentage
@@ -1141,10 +1354,6 @@ function MonthlyKPIScores() {
       };
     }
 
-    // ----------------------------------------------
-    // Higher is better
-    // ----------------------------------------------
-
     if (
       kpi.higher_is_better
     ) {
@@ -1171,10 +1380,6 @@ function MonthlyKPIScores() {
       };
     }
 
-    // ----------------------------------------------
-    // Lower is better
-    // ----------------------------------------------
-
     if (
       difference > 0
     ) {
@@ -1198,9 +1403,9 @@ function MonthlyKPIScores() {
     };
   }
 
-  // --------------------------------------------------
-  // Previous month remark
-  // --------------------------------------------------
+  // ==================================================
+  // PREVIOUS MONTH REMARK
+  // ==================================================
 
   function getPreviousMonthRemark(
     kpi
@@ -1263,10 +1468,6 @@ function MonthlyKPIScores() {
         numericPrevious
       )}${unit}`;
 
-    // ----------------------------------------------
-    // No change
-    // ----------------------------------------------
-
     if (
       difference === 0
     ) {
@@ -1277,10 +1478,6 @@ function MonthlyKPIScores() {
         arrow: "—",
       };
     }
-
-    // ----------------------------------------------
-    // Higher is better
-    // ----------------------------------------------
 
     if (
       kpi.higher_is_better
@@ -1308,10 +1505,6 @@ function MonthlyKPIScores() {
       };
     }
 
-    // ----------------------------------------------
-    // Lower is better
-    // ----------------------------------------------
-
     if (
       difference > 0
     ) {
@@ -1335,9 +1528,9 @@ function MonthlyKPIScores() {
     };
   }
 
-  // --------------------------------------------------
-  // Loading
-  // --------------------------------------------------
+  // ==================================================
+  // LOADING
+  // ==================================================
 
   if (loading) {
     return (
@@ -1365,9 +1558,9 @@ function MonthlyKPIScores() {
     );
   }
 
-  // --------------------------------------------------
-  // No member found
-  // --------------------------------------------------
+  // ==================================================
+  // NO MEMBER
+  // ==================================================
 
   if (!currentMember) {
     return (
@@ -1396,16 +1589,21 @@ function MonthlyKPIScores() {
     );
   }
 
-  // --------------------------------------------------
-  // Page
-  // --------------------------------------------------
+  // ==================================================
+  // CALCULATED MONTHLY SCORE
+  // ==================================================
+
+  const totalCalculatedScore =
+    getTotalCalculatedScore();
+
+  // ==================================================
+  // PAGE
+  // ==================================================
 
   return (
     <div className="page-container">
 
-      {/* ------------------------------------------ */}
       {/* PAGE HEADER */}
-      {/* ------------------------------------------ */}
 
       <div className="page-header">
 
@@ -1421,13 +1619,11 @@ function MonthlyKPIScores() {
 
       </div>
 
-      {/* ------------------------------------------ */}
       {/* FILTERS */}
-      {/* ------------------------------------------ */}
 
       <div className="scores-filter-card">
 
-        {/* IS Member */}
+        {/* IS MEMBER */}
 
         <div className="scores-field">
 
@@ -1439,12 +1635,8 @@ function MonthlyKPIScores() {
           role === "Admin" ? (
             <select
               className="scores-select"
-              value={
-                selectedMember
-              }
-              onChange={(
-                event
-              ) => {
+              value={selectedMember}
+              onChange={(event) => {
                 setSelectedMember(
                   event.target.value
                 );
@@ -1462,12 +1654,8 @@ function MonthlyKPIScores() {
               {members.map(
                 (member) => (
                   <option
-                    key={
-                      member.member_id
-                    }
-                    value={
-                      member.member_id
-                    }
+                    key={member.member_id}
+                    value={member.member_id}
                   >
                     {member.name}
                   </option>
@@ -1483,7 +1671,7 @@ function MonthlyKPIScores() {
 
         </div>
 
-        {/* Month */}
+        {/* MONTH */}
 
         <div className="scores-field">
 
@@ -1508,13 +1696,9 @@ function MonthlyKPIScores() {
               !oldestAvailableDate ||
               availableMonthOptions.length === 0
             }
-            onChange={(
-              event
-            ) =>
+            onChange={(event) =>
               setMonth(
-                Number(
-                  event.target.value
-                )
+                Number(event.target.value)
               )
             }
           >
@@ -1531,8 +1715,7 @@ function MonthlyKPIScores() {
               <option value="">
                 No previous scores found
               </option>
-            ) : availableMonthOptions.length ===
-              0 ? (
+            ) : availableMonthOptions.length === 0 ? (
               <option value="">
                 No months available
               </option>
@@ -1545,16 +1728,10 @@ function MonthlyKPIScores() {
                 {availableMonthOptions.map(
                   (monthOption) => (
                     <option
-                      key={
-                        monthOption.value
-                      }
-                      value={
-                        monthOption.value
-                      }
+                      key={monthOption.value}
+                      value={monthOption.value}
                     >
-                      {
-                        monthOption.label
-                      }
+                      {monthOption.label}
                     </option>
                   )
                 )}
@@ -1565,7 +1742,7 @@ function MonthlyKPIScores() {
 
         </div>
 
-        {/* Year */}
+        {/* YEAR */}
 
         <div className="scores-field scores-year-field">
 
@@ -1582,25 +1759,18 @@ function MonthlyKPIScores() {
                 ?.year ?? 1900
             }
             max={
-              getPreviousCurrentMonth()
-                .year
+              getPreviousCurrentMonth().year
             }
             disabled={
               !selectedMember ||
               loadingMonths ||
               !oldestAvailableDate
             }
-            onChange={(
-              event
-            ) => {
+            onChange={(event) => {
               const newYear =
-                Number(
-                  event.target.value
-                );
+                Number(event.target.value);
 
-              setYear(
-                newYear
-              );
+              setYear(newYear);
             }}
           />
 
@@ -1608,9 +1778,7 @@ function MonthlyKPIScores() {
 
       </div>
 
-      {/* ------------------------------------------ */}
       {/* NO MEMBER SELECTED */}
-      {/* ------------------------------------------ */}
 
       {!selectedMember &&
         (role === "Admin" ||
@@ -1634,9 +1802,7 @@ function MonthlyKPIScores() {
           </div>
         )}
 
-      {/* ------------------------------------------ */}
       {/* NO PREVIOUS DATA */}
-      {/* ------------------------------------------ */}
 
       {selectedMember &&
         !loadingMonths &&
@@ -1660,9 +1826,7 @@ function MonthlyKPIScores() {
           </div>
         )}
 
-      {/* ------------------------------------------ */}
       {/* KPI TABLE */}
-      {/* ------------------------------------------ */}
 
       {selectedMember &&
         oldestAvailableDate &&
@@ -1696,14 +1860,32 @@ function MonthlyKPIScores() {
                       KPI
                     </th>
 
-                    <th>
+                    <th className="text-center">
+                      Weight
+                    </th>
+
+                    <th className="text-center">
                       Target
                     </th>
 
-                    <th className="score-column">
+                    <th className="score-column text-center">
                       {getMonthName()}{" "}
                       {year} Score
                     </th>
+
+                    {/* RAW SCORE */}
+                    {canSeeRawScore() && (
+                      <th className="text-center">
+                        Raw Score
+                      </th>
+                    )}
+
+                    {/* CALCULATED SCORE */}
+                    {canSeeCalculatedScore() && (
+                      <th className="text-center">
+                        Calculated Score
+                      </th>
+                    )}
 
                     <th>
                       Remarks
@@ -1719,7 +1901,13 @@ function MonthlyKPIScores() {
                     <tr>
 
                       <td
-                        colSpan="4"
+                        colSpan={
+                          canSeeCalculatedScore()
+                            ? canSeeRawScore()
+                              ? "7"
+                              : "6"
+                            : "5"
+                        }
                         className="kpi-empty"
                       >
                         No KPIs found.
@@ -1729,6 +1917,15 @@ function MonthlyKPIScores() {
                   ) : (
                     kpis.map(
                       (kpi) => {
+
+                        const monthlyScore =
+                          isMonthlyScore(kpi);
+
+                        const rawScore =
+                          getRawScore(kpi);
+
+                        const calculatedScore =
+                          getCalculatedScore(kpi);
 
                         const targetRemark =
                           getTargetRemark(
@@ -1742,22 +1939,58 @@ function MonthlyKPIScores() {
 
                         return (
                           <tr
-                            key={
-                              kpi.kpi_id
+                            key={kpi.kpi_id}
+                            className={
+                              monthlyScore
+                                ? "monthly-score-row"
+                                : ""
                             }
                           >
 
                             {/* KPI */}
 
                             <td className="kpi-name">
+
                               {kpi.name}
+
+                              {monthlyScore && (
+                                <div className="monthly-score-label">
+                                  Final monthly score
+                                </div>
+                              )}
+
                             </td>
 
-                            {/* Target */}
+                            {/* WEIGHT */}
 
-                            <td>
-                              {kpi.target_value ??
-                                "-"}
+                            <td className="text-center">
+
+                              {monthlyScore
+                                ? "-"
+                                : kpi.weight !==
+                                  null &&
+                                  kpi.weight !==
+                                    undefined
+                                ? formatNumber(
+                                    kpi.weight
+                                  )
+                                : "-"}
+
+                            </td>
+
+                            {/* TARGET */}
+
+                            <td className="text-center">
+
+                              {kpi.target_value !==
+                                null &&
+                              kpi.target_value !==
+                                undefined &&
+                              kpi.target_value !== ""
+                                ? formatNumber(
+                                    kpi.target_value
+                                  )
+                                : "-"}
 
                               {kpi.unit && (
                                 <span className="target-unit">
@@ -1765,63 +1998,235 @@ function MonthlyKPIScores() {
                                   {kpi.unit}
                                 </span>
                               )}
+
                             </td>
 
-                            {/* Score */}
+                            {/* ACTUAL SCORE */}
 
                             <td className="score-column">
 
-                              {canEditSelectedMember() ? (
-                                <div className="score-input-wrapper">
+                              {/* -------------------------------- */}
+                              {/* MONTHLY SCORE */}
+                              {/* Only Admin/Super Admin may enter */}
+                              {/* -------------------------------- */}
 
-                                  <input
-                                    className="score-input"
-                                    type="number"
-                                    value={
+                              {monthlyScore ? (
+
+                                canEditSelectedMember() &&
+                                canSeeCalculatedScore() ? (
+
+                                  <div className="score-input-wrapper">
+
+                                    <input
+                                      className="score-input"
+                                      type="number"
+                                      step="0.01"
+                                      value={
+                                        scores[
+                                          kpi.kpi_id
+                                        ] ?? ""
+                                      }
+                                      onChange={(event) =>
+                                        updateScore(
+                                          kpi.kpi_id,
+                                          event.target.value
+                                        )
+                                      }
+                                      onBlur={(event) => {
+                                        const value =
+                                          event.target.value;
+
+                                        if (
+                                          value !== ""
+                                        ) {
+                                          updateScore(
+                                            kpi.kpi_id,
+                                            formatNumber(
+                                              value
+                                            )
+                                          );
+                                        }
+                                      }}
+                                    />
+
+                                  </div>
+
+                                ) : (
+
+                                  <div className="score-view-wrapper">
+
+                                    <span className="score-value">
+                                      {scores[
+                                        kpi.kpi_id
+                                      ] !==
+                                        undefined &&
                                       scores[
                                         kpi.kpi_id
-                                      ] ?? ""
-                                    }
-                                    onChange={(
-                                      event
-                                    ) =>
-                                      updateScore(
-                                        kpi.kpi_id,
-                                        event
-                                          .target
-                                          .value
-                                      )
-                                    }
-                                  />
-
-                                  {kpi.unit && (
-                                    <span className="score-unit">
-                                      {kpi.unit}
+                                      ] !== ""
+                                        ? formatNumber(
+                                            scores[
+                                              kpi.kpi_id
+                                            ]
+                                          )
+                                        : "-"}
                                     </span>
-                                  )}
 
-                                </div>
+                                  </div>
+
+                                )
+
                               ) : (
-                                <div className="score-view-wrapper">
 
-                                  <span className="score-value">
-                                    {scores[
-                                      kpi.kpi_id
-                                    ] ?? "-"}
-                                  </span>
+                                /* -------------------------------- */
+                                /* NORMAL KPI ACTUAL SCORE */
+                                /* -------------------------------- */
 
-                                  {kpi.unit && (
-                                    <span className="score-unit">
-                                      {kpi.unit}
+                                canEditSelectedMember() ? (
+
+                                  <div className="score-input-wrapper">
+
+                                    <input
+                                      className="score-input"
+                                      type="number"
+                                      step="0.01"
+                                      value={
+                                        scores[
+                                          kpi.kpi_id
+                                        ] ?? ""
+                                      }
+                                      onChange={(event) =>
+                                        updateScore(
+                                          kpi.kpi_id,
+                                          event.target.value
+                                        )
+                                      }
+                                      onBlur={(event) => {
+                                        const value =
+                                          event.target.value;
+
+                                        if (
+                                          value !== ""
+                                        ) {
+                                          updateScore(
+                                            kpi.kpi_id,
+                                            formatNumber(
+                                              value
+                                            )
+                                          );
+                                        }
+                                      }}
+                                    />
+
+                                    {kpi.unit && (
+                                      <span className="score-unit">
+                                        {kpi.unit}
+                                      </span>
+                                    )}
+
+                                  </div>
+
+                                ) : (
+
+                                  <div className="score-view-wrapper">
+
+                                    <span className="score-value">
+
+                                      {scores[
+                                        kpi.kpi_id
+                                      ] !==
+                                        undefined &&
+                                      scores[
+                                        kpi.kpi_id
+                                      ] !== ""
+                                        ? formatNumber(
+                                            scores[
+                                              kpi.kpi_id
+                                            ]
+                                          )
+                                        : "-"}
+
                                     </span>
-                                  )}
 
-                                </div>
+                                    {kpi.unit && (
+                                      <span className="score-unit">
+                                        {kpi.unit}
+                                      </span>
+                                    )}
+
+                                  </div>
+
+                                )
+
                               )}
 
                             </td>
 
-                            {/* Remarks */}
+                            {/* RAW SCORE */}
+
+                            {canSeeRawScore() && (
+                              <td className="text-center raw-score-column">
+
+                                {rawScore !== null
+                                  ? formatNumber(
+                                      rawScore
+                                    )
+                                  : "-"}
+
+                              </td>
+                            )}
+
+                            {/* CALCULATED SCORE */}
+
+                            {canSeeCalculatedScore() && (
+                              <td className="text-center calculated-score-column">
+
+                                {monthlyScore ? (
+
+                                  totalCalculatedScore !==
+                                  null ? (
+
+                                    <div className="calculated-score-container">
+
+                                      <span className="calculated-score-value">
+                                        {formatNumber(
+                                          totalCalculatedScore
+                                        )}
+                                      </span>
+
+                                      {canEditSelectedMember() && (
+                                        <button
+                                          type="button"
+                                          className="copy-score-button"
+                                          onClick={
+                                            copyCalculatedScore
+                                          }
+                                          title="Copy calculated score to Monthly Score"
+                                        >
+                                          Copy
+                                        </button>
+                                      )}
+
+                                    </div>
+
+                                  ) : (
+                                    "-"
+                                  )
+
+                                ) : (
+
+                                  calculatedScore !==
+                                  null
+                                    ? formatNumber(
+                                        calculatedScore
+                                      )
+                                    : "-"
+
+                                )}
+
+                              </td>
+                            )}
+
+                            {/* REMARKS */}
 
                             <td className="remarks-cell">
 
@@ -1833,15 +2238,11 @@ function MonthlyKPIScores() {
                                   >
 
                                     <span className="remark-arrow">
-                                      {
-                                        targetRemark.arrow
-                                      }
+                                      {targetRemark.arrow}
                                     </span>
 
                                     <span>
-                                      {
-                                        targetRemark.text
-                                      }
+                                      {targetRemark.text}
                                     </span>
 
                                   </div>
@@ -1853,15 +2254,11 @@ function MonthlyKPIScores() {
                                   >
 
                                     <span className="remark-arrow">
-                                      {
-                                        previousRemark.arrow
-                                      }
+                                      {previousRemark.arrow}
                                     </span>
 
                                     <span>
-                                      {
-                                        previousRemark.text
-                                      }
+                                      {previousRemark.text}
                                     </span>
 
                                   </div>
@@ -1883,21 +2280,15 @@ function MonthlyKPIScores() {
 
             </div>
 
-            {/* ------------------------------------------ */}
             {/* SAVE */}
-            {/* ------------------------------------------ */}
 
             {canEditSelectedMember() && (
               <div className="scores-actions">
 
                 <button
                   className="scores-save-button"
-                  onClick={
-                    saveScores
-                  }
-                  disabled={
-                    !selectedMember
-                  }
+                  onClick={saveScores}
+                  disabled={!selectedMember}
                 >
                   Save Scores
                 </button>
@@ -1908,9 +2299,7 @@ function MonthlyKPIScores() {
           </>
         )}
 
-      {/* =================================================
-          SAVE NOTIFICATION
-          ================================================= */}
+      {/* NOTIFICATION */}
 
       {notification && (
         <div
