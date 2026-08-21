@@ -17,41 +17,52 @@ export function AuthProvider({ children }) {
     let mounted = true;
 
     // --------------------------------------------------
-    // Load current authenticated user
+    // Load current authenticated session
     // --------------------------------------------------
 
-    async function getInitialUser() {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
+    async function getInitialSession() {
+      try {
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
 
-      if (!mounted) {
-        return;
-      }
+        if (!mounted) {
+          return;
+        }
 
-      if (error) {
+        if (error) {
+          console.error(
+            "Error getting authentication session:",
+            error
+          );
+
+          setUser(null);
+        } else {
+          setUser(
+            session?.user ?? null
+          );
+        }
+      } catch (error) {
         console.error(
-          "Error getting authenticated user:",
+          "Unexpected authentication error:",
           error
         );
 
-        setUser(null);
-      } else {
-        setUser(user ?? null);
+        if (mounted) {
+          setUser(null);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
-
-      setLoading(false);
     }
 
-    getInitialUser();
+    getInitialSession();
 
     // --------------------------------------------------
     // Listen for authentication changes
-    //
-    // IMPORTANT:
-    // Do not update React state when Supabase is
-    // simply refreshing the same user's session.
     // --------------------------------------------------
 
     const {
@@ -69,9 +80,8 @@ export function AuthProvider({ children }) {
           // ------------------------------------------------
           // Same authenticated user.
           //
-          // This prevents TOKEN_REFRESHED and similar
-          // Supabase events from replacing the user object
-          // and unnecessarily triggering application logic.
+          // Prevent unnecessary React updates when Supabase
+          // refreshes the existing session.
           // ------------------------------------------------
 
           if (
@@ -91,11 +101,17 @@ export function AuthProvider({ children }) {
           }
 
           // ------------------------------------------------
-          // A genuinely different user logged in
+          // A different user logged in
           // ------------------------------------------------
 
           return nextUser;
         });
+
+        // --------------------------------------------------
+        // Make sure loading is finished after auth events
+        // --------------------------------------------------
+
+        setLoading(false);
       }
     );
 

@@ -1,8 +1,13 @@
 function KPIChart({
   kpi,
-  scores,
+  scores = [],
+  allScores = [],
   fromDate,
   toDate,
+  members = [],
+  selectedMemberIds = [],
+  showTable = false,
+  isTeamView = false,
 }) {
   const chartWidth = 600;
   const chartHeight = 260;
@@ -24,21 +29,21 @@ function KPIChart({
     padding.top -
     padding.bottom;
 
-  // --------------------------------------------------
-  // Generate every month in the selected range
-  // --------------------------------------------------
+  // ==================================================
+  // GENERATE MONTHS IN RANGE
+  // ==================================================
 
   function getMonthsInRange() {
     const months = [];
 
-    let year = fromDate.year;
-    let month = fromDate.month;
+    let year = Number(fromDate.year);
+    let month = Number(fromDate.month);
 
     while (
-      year < toDate.year ||
+      year < Number(toDate.year) ||
       (
-        year === toDate.year &&
-        month <= toDate.month
+        year === Number(toDate.year) &&
+        month <= Number(toDate.month)
       )
     ) {
       months.push({
@@ -59,18 +64,69 @@ function KPIChart({
 
   const months = getMonthsInRange();
 
-  // --------------------------------------------------
-  // Find score for a particular month
-  // --------------------------------------------------
+  // ==================================================
+  // FORMAT VALUE
+  // ==================================================
 
-  function getScore(month, year) {
-    const score = scores.find(
+  function formatValue(value) {
+    if (
+      value === null ||
+      value === undefined ||
+      Number.isNaN(Number(value))
+    ) {
+      return "—";
+    }
+
+    return Number(value).toFixed(2);
+  }
+
+  // ==================================================
+  // FORMAT MONTH
+  // ==================================================
+
+  function formatMonth(month, year) {
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      1
+    ).toLocaleDateString(
+      "en-US",
+      {
+        month: "short",
+        year:
+          months.length > 12
+            ? "2-digit"
+            : undefined,
+      }
+    );
+  }
+
+  // ==================================================
+  // GET INDIVIDUAL MEMBER SCORE
+  // ==================================================
+
+  function getMemberScore(
+    memberId,
+    month,
+    year
+  ) {
+    const score = allScores.find(
       (item) =>
-        Number(item.month) === month &&
-        Number(item.year) === year
+        String(item.member_id) ===
+          String(memberId) &&
+        String(item.kpi_id) ===
+          String(kpi.kpi_id) &&
+        Number(item.month) ===
+          Number(month) &&
+        Number(item.year) ===
+          Number(year)
     );
 
-    if (!score) {
+    if (
+      !score ||
+      score.value === null ||
+      score.value === ""
+    ) {
       return null;
     }
 
@@ -81,19 +137,115 @@ function KPIChart({
       : value;
   }
 
+  // ==================================================
+  // GET TEAM AVERAGE FOR A MONTH
+  // ==================================================
+
+  function getTeamAverage(
+    month,
+    year
+  ) {
+    if (
+      !selectedMemberIds ||
+      selectedMemberIds.length === 0
+    ) {
+      return null;
+    }
+
+    const values = selectedMemberIds
+      .map((memberId) =>
+        getMemberScore(
+          memberId,
+          month,
+          year
+        )
+      )
+      .filter(
+        (value) => value !== null
+      );
+
+    if (values.length === 0) {
+      return null;
+    }
+
+    const total = values.reduce(
+      (sum, value) =>
+        sum + value,
+      0
+    );
+
+    return total / values.length;
+  }
+
+  // ==================================================
+  // GET INDIVIDUAL SCORE
+  //
+  // Used when viewing one member.
+  // ==================================================
+
+  function getIndividualScore(
+    month,
+    year
+  ) {
+    const score = scores.find(
+      (item) =>
+        Number(item.month) ===
+          Number(month) &&
+        Number(item.year) ===
+          Number(year)
+    );
+
+    if (
+      !score ||
+      score.value === null ||
+      score.value === ""
+    ) {
+      return null;
+    }
+
+    const value = Number(score.value);
+
+    return Number.isNaN(value)
+      ? null
+      : value;
+  }
+
+  // ==================================================
+  // CHART DATA
+  //
+  // Team view:
+  //     chart = team average
+  //
+  // Individual view:
+  //     chart = individual score
+  // ==================================================
+
   const chartData = months.map(
-    (monthData) => ({
-      ...monthData,
-      value: getScore(
-        monthData.month,
-        monthData.year
-      ),
-    })
+    (monthData) => {
+      let value = null;
+
+      if (isTeamView) {
+        value = getTeamAverage(
+          monthData.month,
+          monthData.year
+        );
+      } else {
+        value = getIndividualScore(
+          monthData.month,
+          monthData.year
+        );
+      }
+
+      return {
+        ...monthData,
+        value,
+      };
+    }
   );
 
-  // --------------------------------------------------
-  // Values that actually exist
-  // --------------------------------------------------
+  // ==================================================
+  // ACTUAL CHART VALUES
+  // ==================================================
 
   const actualValues = chartData
     .map((item) => item.value)
@@ -101,9 +253,9 @@ function KPIChart({
       (value) => value !== null
     );
 
-  // --------------------------------------------------
-  // Target value
-  // --------------------------------------------------
+  // ==================================================
+  // TARGET
+  // ==================================================
 
   const targetValue = Number(
     kpi.target_value
@@ -112,16 +264,18 @@ function KPIChart({
   const hasTarget =
     !Number.isNaN(targetValue);
 
-  // --------------------------------------------------
-  // Empty chart
-  // --------------------------------------------------
+  // ==================================================
+  // EMPTY CHART
+  // ==================================================
 
   if (actualValues.length === 0) {
     return (
       <div className="dashboard-kpi-card">
 
         <div className="dashboard-kpi-header">
+
           <div>
+
             <h3>
               {kpi.name}
             </h3>
@@ -130,6 +284,7 @@ function KPIChart({
               {kpi.description
                 ? `${kpi.description} `
                 : ""}
+
               {hasTarget && (
                 <span>
                   (target:{" "}
@@ -140,7 +295,9 @@ function KPIChart({
                 </span>
               )}
             </p>
+
           </div>
+
         </div>
 
         <div className="dashboard-empty-chart">
@@ -148,18 +305,166 @@ function KPIChart({
           for this period.
         </div>
 
+        {/* ========================================== */}
+        {/* TABLE */}
+        {/* ========================================== */}
+
+        {showTable &&
+          members.length > 0 && (
+            <div className="dashboard-score-table-wrapper">
+
+              <table className="dashboard-score-table">
+
+                <thead>
+                  <tr>
+
+                    <th>
+                      Member
+                    </th>
+
+                    {months.map(
+                      (monthData) => (
+                        <th
+                          key={`header-${monthData.year}-${monthData.month}`}
+                        >
+                          {formatMonth(
+                            monthData.month,
+                            monthData.year
+                          )}
+                        </th>
+                      )
+                    )}
+
+                    <th>
+                      Average
+                    </th>
+
+                  </tr>
+                </thead>
+
+                <tbody>
+
+                  {members
+                    .filter((member) =>
+                      selectedMemberIds.includes(
+                        member.member_id
+                      )
+                    )
+                    .map((member) => {
+
+                      const memberValues =
+                        months
+                          .map(
+                            (monthData) =>
+                              getMemberScore(
+                                member.member_id,
+                                monthData.month,
+                                monthData.year
+                              )
+                          )
+                          .filter(
+                            (value) =>
+                              value !== null
+                          );
+
+                      const average =
+                        memberValues.length > 0
+                          ? memberValues.reduce(
+                              (sum, value) =>
+                                sum + value,
+                              0
+                            ) /
+                            memberValues.length
+                          : null;
+
+                      return (
+                        <tr
+                          key={
+                            member.member_id
+                          }
+                        >
+
+                          <td className="dashboard-score-member">
+                            {member.name}
+                          </td>
+
+                          {months.map(
+                            (monthData) => {
+
+                              const score =
+                                getMemberScore(
+                                  member.member_id,
+                                  monthData.month,
+                                  monthData.year
+                                );
+
+                              return (
+                                <td
+                                  key={`${member.member_id}-${monthData.year}-${monthData.month}`}
+                                  className="dashboard-score-value"
+                                >
+                                  {score !==
+                                  null
+                                    ? formatValue(
+                                        score
+                                      )
+                                    : "—"}
+                                </td>
+                              );
+                            }
+                          )}
+
+                          <td className="dashboard-score-average">
+                            {average !==
+                            null
+                              ? formatValue(
+                                  average
+                                )
+                              : "—"}
+                          </td>
+
+                        </tr>
+                      );
+                    })}
+
+                </tbody>
+
+              </table>
+
+              {/* ==================================== */}
+              {/* TEAM AVERAGE */}
+              {/* ==================================== */}
+
+              {isTeamView && (
+                <div
+                  className="dashboard-team-average"
+                  style={{
+                    fontWeight: "700",
+                    marginTop: "12px",
+                    padding: "10px 12px",
+                    textAlign: "right",
+                  }}
+                >
+                  Team Average
+                </div>
+              )}
+
+            </div>
+          )}
+
       </div>
     );
   }
 
-  // --------------------------------------------------
-  // Determine chart range
-  // Include target in the range so the
-  // target line is always visible.
-  // --------------------------------------------------
+  // ==================================================
+  // CHART RANGE
+  // ==================================================
 
   const allChartValues = hasTarget
-    ? [...actualValues, targetValue]
+    ? [
+        ...actualValues,
+        targetValue,
+      ]
     : actualValues;
 
   const dataMin =
@@ -171,8 +476,6 @@ function KPIChart({
   let chartMin;
   let chartMax;
 
-  // If all values are identical,
-  // create some vertical breathing room.
   if (dataMin === dataMax) {
     const paddingAmount =
       Math.max(
@@ -204,6 +507,7 @@ function KPIChart({
   }
 
   // Keep zero visible when all values are positive.
+
   if (
     dataMin >= 0 &&
     chartMin > 0
@@ -214,9 +518,9 @@ function KPIChart({
   const valueRange =
     chartMax - chartMin;
 
-  // --------------------------------------------------
-  // Coordinate helpers
-  // --------------------------------------------------
+  // ==================================================
+  // COORDINATES
+  // ==================================================
 
   function getX(index) {
     if (months.length === 1) {
@@ -244,9 +548,9 @@ function KPIChart({
     );
   }
 
-  // --------------------------------------------------
-  // Build chart points
-  // --------------------------------------------------
+  // ==================================================
+  // POINTS
+  // ==================================================
 
   const points = chartData.map(
     (item, index) => ({
@@ -259,9 +563,9 @@ function KPIChart({
     })
   );
 
-  // --------------------------------------------------
-  // Build line segments
-  // --------------------------------------------------
+  // ==================================================
+  // LINE SEGMENTS
+  // ==================================================
 
   const segments = [];
 
@@ -291,49 +595,9 @@ function KPIChart({
     );
   }
 
-  // --------------------------------------------------
-  // Format month
-  // --------------------------------------------------
-
-  function formatMonth(
-    month,
-    year
-  ) {
-    return new Date(
-      year,
-      month - 1,
-      1
-    ).toLocaleDateString(
-      "en-US",
-      {
-        month: "short",
-        year:
-          months.length > 12
-            ? "2-digit"
-            : undefined,
-      }
-    );
-  }
-
-  // --------------------------------------------------
-  // Format score
-  // --------------------------------------------------
-
-  function formatValue(value) {
-    if (
-      Number.isInteger(value)
-    ) {
-      return value;
-    }
-
-    return Number(
-      value.toFixed(2)
-    );
-  }
-
-  // --------------------------------------------------
-  // Y-axis labels
-  // --------------------------------------------------
+  // ==================================================
+  // GRID
+  // ==================================================
 
   const gridCount = 4;
 
@@ -357,33 +621,135 @@ function KPIChart({
       }
     );
 
-  // --------------------------------------------------
-  // Target line
-  // --------------------------------------------------
+  // ==================================================
+  // TARGET LINE
+  // ==================================================
 
   const targetY = hasTarget
     ? getY(targetValue)
     : null;
 
-  // --------------------------------------------------
-  // Render
-  // --------------------------------------------------
+  // ==================================================
+  // MEMBER TABLE
+  // ==================================================
+
+  const filteredMembers =
+    members.filter((member) =>
+      selectedMemberIds.includes(
+        member.member_id
+      )
+    );
+
+  // ==================================================
+  // MEMBER AVERAGE
+  // ==================================================
+
+  function getMemberAverage(
+    memberId
+  ) {
+    const memberValues =
+      months
+        .map(
+          (monthData) =>
+            getMemberScore(
+              memberId,
+              monthData.month,
+              monthData.year
+            )
+        )
+        .filter(
+          (value) =>
+            value !== null
+        );
+
+    if (
+      memberValues.length === 0
+    ) {
+      return null;
+    }
+
+    const total =
+      memberValues.reduce(
+        (sum, value) =>
+          sum + value,
+        0
+      );
+
+    return (
+      total /
+      memberValues.length
+    );
+  }
+
+  // ==================================================
+  // TEAM AVERAGE OVER ENTIRE PERIOD
+  // ==================================================
+
+  function getOverallTeamAverage() {
+    const values = [];
+
+    filteredMembers.forEach(
+      (member) => {
+        months.forEach(
+          (monthData) => {
+            const score =
+              getMemberScore(
+                member.member_id,
+                monthData.month,
+                monthData.year
+              );
+
+            if (
+              score !== null
+            ) {
+              values.push(score);
+            }
+          }
+        );
+      }
+    );
+
+    if (values.length === 0) {
+      return null;
+    }
+
+    const total =
+      values.reduce(
+        (sum, value) =>
+          sum + value,
+        0
+      );
+
+    return (
+      total /
+      values.length
+    );
+  }
+
+  const overallTeamAverage =
+    getOverallTeamAverage();
+
+  // ==================================================
+  // RENDER
+  // ==================================================
 
   return (
     <div className="dashboard-kpi-card">
 
-      {/* ------------------------------------------ */}
+      {/* ============================================ */}
       {/* HEADER */}
-      {/* ------------------------------------------ */}
+      {/* ============================================ */}
 
       <div className="dashboard-kpi-header">
 
         <div>
+
           <h3>
             {kpi.name}
           </h3>
 
           <p>
+
             {kpi.description
               ? `${kpi.description} `
               : ""}
@@ -397,14 +763,16 @@ function KPIChart({
                 {kpi.unit || ""})
               </span>
             )}
+
           </p>
+
         </div>
 
       </div>
 
-      {/* ------------------------------------------ */}
+      {/* ============================================ */}
       {/* CHART */}
-      {/* ------------------------------------------ */}
+      {/* ============================================ */}
 
       <div className="dashboard-chart-wrapper">
 
@@ -413,9 +781,9 @@ function KPIChart({
           className="dashboard-chart"
         >
 
-          {/* ------------------------------------ */}
-          {/* Grid */}
-          {/* ------------------------------------ */}
+          {/* ======================================== */}
+          {/* GRID */}
+          {/* ======================================== */}
 
           {gridLines.map(
             (line, index) => (
@@ -454,9 +822,9 @@ function KPIChart({
             )
           )}
 
-          {/* ------------------------------------ */}
-          {/* X Axis */}
-          {/* ------------------------------------ */}
+          {/* ======================================== */}
+          {/* X AXIS */}
+          {/* ======================================== */}
 
           <line
             x1={
@@ -477,12 +845,13 @@ function KPIChart({
             className="dashboard-chart-axis"
           />
 
-          {/* ------------------------------------ */}
-          {/* Target Line */}
-          {/* ------------------------------------ */}
+          {/* ======================================== */}
+          {/* TARGET */}
+          {/* ======================================== */}
 
           {hasTarget && (
             <>
+
               <line
                 x1={
                   padding.left
@@ -512,12 +881,13 @@ function KPIChart({
                   targetValue
                 )}
               </text>
+
             </>
           )}
 
-          {/* ------------------------------------ */}
-          {/* KPI Lines */}
-          {/* ------------------------------------ */}
+          {/* ======================================== */}
+          {/* KPI LINE */}
+          {/* ======================================== */}
 
           {segments.map(
             (
@@ -548,9 +918,9 @@ function KPIChart({
             }
           )}
 
-          {/* ------------------------------------ */}
-          {/* Data Points */}
-          {/* ------------------------------------ */}
+          {/* ======================================== */}
+          {/* DATA POINTS */}
+          {/* ======================================== */}
 
           {points.map(
             (
@@ -564,6 +934,7 @@ function KPIChart({
                 {point.value !==
                   null && (
                   <>
+
                     <circle
                       cx={
                         point.x
@@ -590,6 +961,7 @@ function KPIChart({
                         point.value
                       )}
                     </text>
+
                   </>
                 )}
 
@@ -617,6 +989,181 @@ function KPIChart({
         </svg>
 
       </div>
+
+      {/* ============================================ */}
+      {/* MEMBER SCORE TABLE */}
+      {/* ============================================ */}
+
+      {showTable &&
+        filteredMembers.length > 0 && (
+          <div className="dashboard-score-table-wrapper">
+
+            <table className="dashboard-score-table">
+
+              <thead>
+
+                <tr>
+
+                  <th>
+                    Member
+                  </th>
+
+                  {months.map(
+                    (monthData) => (
+                      <th
+                        key={`header-${monthData.year}-${monthData.month}`}
+                      >
+                        {formatMonth(
+                          monthData.month,
+                          monthData.year
+                        )}
+                      </th>
+                    )
+                  )}
+
+                  <th>
+                    Average
+                  </th>
+
+                </tr>
+
+              </thead>
+
+              <tbody>
+
+                {filteredMembers.map(
+                  (member) => {
+
+                    const average =
+                      getMemberAverage(
+                        member.member_id
+                      );
+
+                    return (
+                      <tr
+                        key={
+                          member.member_id
+                        }
+                      >
+
+                        <td className="dashboard-score-member">
+                          {member.name}
+                        </td>
+
+                        {months.map(
+                          (monthData) => {
+
+                            const score =
+                              getMemberScore(
+                                member.member_id,
+                                monthData.month,
+                                monthData.year
+                              );
+
+                            return (
+                              <td
+                                key={`${member.member_id}-${monthData.year}-${monthData.month}`}
+                                className="dashboard-score-value"
+                              >
+                                {score !==
+                                null
+                                  ? formatValue(
+                                      score
+                                    )
+                                  : "—"}
+                              </td>
+                            );
+                          }
+                        )}
+
+                        <td className="dashboard-score-average">
+                          {average !==
+                          null
+                            ? formatValue(
+                                average
+                              )
+                            : "—"}
+                        </td>
+
+                      </tr>
+                    );
+                  }
+                )}
+
+                {/* ================================== */}
+                {/* TEAM AVERAGE ROW */}
+                {/* ================================== */}
+
+                {isTeamView && (
+                  <tr
+                    className="dashboard-team-average-row"
+                    style={{
+                      fontWeight: "700",
+                    }}
+                  >
+
+                    <td
+                      className="dashboard-score-member"
+                      style={{
+                        fontWeight: "700",
+                      }}
+                    >
+                      Team Average
+                    </td>
+
+                    {months.map(
+                      (monthData) => {
+
+                        const average =
+                          getTeamAverage(
+                            monthData.month,
+                            monthData.year
+                          );
+
+                        return (
+                          <td
+                            key={`team-average-${monthData.year}-${monthData.month}`}
+                            className="dashboard-score-value"
+                            style={{
+                              fontWeight:
+                                "700",
+                            }}
+                          >
+                            {average !==
+                            null
+                              ? formatValue(
+                                  average
+                                )
+                              : "—"}
+                          </td>
+                        );
+                      }
+                    )}
+
+                    <td
+                      className="dashboard-score-average"
+                      style={{
+                        fontWeight:
+                          "700",
+                      }}
+                    >
+                      {overallTeamAverage !==
+                      null
+                        ? formatValue(
+                            overallTeamAverage
+                          )
+                        : "—"}
+                    </td>
+
+                  </tr>
+                )}
+
+              </tbody>
+
+            </table>
+
+          </div>
+        )}
 
     </div>
   );

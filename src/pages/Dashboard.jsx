@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../services/supabase";
 import { useAuth } from "../context/AuthContext";
 import KPIChart from "../components/KPIChart";
@@ -11,9 +11,20 @@ function Dashboard() {
 
   const [members, setMembers] = useState([]);
   const [kpis, setKpis] = useState([]);
+
+  // All scores belonging to the currently selected
+  // member/team.
   const [scores, setScores] = useState([]);
 
-  const [selectedMember, setSelectedMember] = useState("");
+  // --------------------------------------------------
+  // Super Admin filters
+  // --------------------------------------------------
+
+  const [selectedTeamLead, setSelectedTeamLead] =
+    useState("");
+
+  const [selectedMember, setSelectedMember] =
+    useState("");
 
   // --------------------------------------------------
   // Default date range
@@ -42,7 +53,7 @@ function Dashboard() {
   const [toDate, setToDate] = useState(defaultTo);
 
   // --------------------------------------------------
-  // Available months for selected member
+  // Available months
   // --------------------------------------------------
 
   const [availableMonths, setAvailableMonths] =
@@ -56,7 +67,9 @@ function Dashboard() {
   // --------------------------------------------------
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      return;
+    }
 
     initializeDashboard();
   }, [user]);
@@ -84,6 +97,7 @@ function Dashboard() {
     if (member.role === "Super Admin") {
       await fetchAllMembers();
 
+      setSelectedTeamLead("");
       setSelectedMember("");
     }
 
@@ -106,9 +120,11 @@ function Dashboard() {
     // ------------------------------------------------
 
     else {
-      setSelectedMember(
-        member.member_id
-      );
+      // IMPORTANT:
+      // Users do not need selectedMember.
+      // Their scores are always loaded using
+      // currentMember.member_id.
+      setSelectedMember("");
     }
 
     setLoading(false);
@@ -148,6 +164,7 @@ function Dashboard() {
 
   // --------------------------------------------------
   // Super Admin
+  // Load all members
   // --------------------------------------------------
 
   async function fetchAllMembers() {
@@ -228,9 +245,9 @@ function Dashboard() {
     }
 
     /*
-     * Hidden KPIs are completely removed.
+     * Hidden KPIs are removed.
      *
-     * Priority KPIs are placed first.
+     * Priority KPIs appear first.
      *
      * Within each section, sort_order
      * determines the display order.
@@ -286,19 +303,198 @@ function Dashboard() {
   }
 
   // --------------------------------------------------
-  // Load scores whenever member/date range changes
+  // Team Lead options
+  //
+  // A Team Lead is any member whose member_id
+  // is referenced by another member's team_lead.
+  // --------------------------------------------------
+
+  const teamLeadOptions = useMemo(() => {
+    if (role !== "Super Admin") {
+      return [];
+    }
+
+    const teamLeadIds = new Set(
+      members
+        .map(
+          (member) =>
+            member.team_lead
+        )
+        .filter(Boolean)
+    );
+
+    return members
+      .filter((member) =>
+        teamLeadIds.has(
+          member.member_id
+        )
+      )
+      .sort((a, b) =>
+        String(
+          a.name || ""
+        ).localeCompare(
+          String(
+            b.name || ""
+          )
+        )
+      );
+  }, [
+    members,
+    role,
+  ]);
+
+  // --------------------------------------------------
+  // Super Admin member options
+  //
+  // If a Team Lead is selected:
+  // show only that team's members.
+  //
+  // If no Team Lead is selected:
+  // show all members.
+  // --------------------------------------------------
+
+  const superAdminMemberOptions =
+    useMemo(() => {
+      if (role !== "Super Admin") {
+        return [];
+      }
+
+      let availableMembers =
+        members;
+
+      if (selectedTeamLead) {
+        availableMembers =
+          members.filter(
+            (member) =>
+              member.member_id ===
+                selectedTeamLead ||
+              member.team_lead ===
+                selectedTeamLead
+          );
+      }
+
+      return [
+        ...availableMembers,
+      ].sort((a, b) =>
+        String(
+          a.name || ""
+        ).localeCompare(
+          String(
+            b.name || ""
+          )
+        )
+      );
+    }, [
+      members,
+      role,
+      selectedTeamLead,
+    ]);
+
+  // --------------------------------------------------
+  // Current selected member IDs
+  //
+  // This is the important part of the fix.
+  //
+  // User:
+  //   currentMember.member_id
+  //
+  // Admin:
+  //   selectedMember
+  //
+  // Super Admin:
+  //   selectedMember OR all members in the
+  //   selected team / all members
+  // --------------------------------------------------
+
+  const selectedMemberIds = useMemo(() => {
+    if (
+      role === "User"
+    ) {
+      return currentMember?.member_id
+        ? [
+            currentMember.member_id,
+          ]
+        : [];
+    }
+
+    if (
+      role === "Admin"
+    ) {
+      return selectedMember
+        ? [selectedMember]
+        : [];
+    }
+
+    if (
+      role === "Super Admin"
+    ) {
+      // Individual member selected.
+      if (selectedMember) {
+        return [
+          selectedMember,
+        ];
+      }
+
+      // Team Lead selected:
+      // all members in that team.
+      if (selectedTeamLead) {
+        return members
+          .filter(
+            (member) =>
+              member.member_id ===
+                selectedTeamLead ||
+              member.team_lead ===
+                selectedTeamLead
+          )
+          .map(
+            (member) =>
+              member.member_id
+          );
+      }
+
+      // No Team Lead and no individual:
+      // all members.
+      return members.map(
+        (member) =>
+          member.member_id
+      );
+    }
+
+    return [];
+  }, [
+    role,
+    currentMember,
+    selectedMember,
+    selectedTeamLead,
+    members,
+  ]);
+
+  // --------------------------------------------------
+  // Is the dashboard displaying a team?
+  // --------------------------------------------------
+
+  const isTeamView =
+    role === "Super Admin" &&
+    selectedMember === "";
+
+  // --------------------------------------------------
+  // Load scores whenever the actual selection changes
   // --------------------------------------------------
 
   useEffect(() => {
-    if (!selectedMember) {
+    if (
+      selectedMemberIds.length === 0
+    ) {
       setScores([]);
       setAvailableMonths([]);
       return;
     }
 
-    loadScores();
+    loadScores(
+      selectedMemberIds
+    );
   }, [
-    selectedMember,
+    selectedMemberIds,
     fromDate,
     toDate,
   ]);
@@ -321,7 +517,9 @@ function Dashboard() {
   // Load scores
   // --------------------------------------------------
 
-  async function loadScores() {
+  async function loadScores(
+    memberIds
+  ) {
     const { data, error } =
       await supabase
         .from(
@@ -330,9 +528,9 @@ function Dashboard() {
         .select(
           "id, member_id, kpi_id, month, year, value, remarks"
         )
-        .eq(
+        .in(
           "member_id",
-          selectedMember
+          memberIds
         );
 
     if (error) {
@@ -344,6 +542,9 @@ function Dashboard() {
       setError(
         "Unable to load KPI scores."
       );
+
+      setScores([]);
+      setAvailableMonths([]);
 
       return;
     }
@@ -361,43 +562,53 @@ function Dashboard() {
     memberScores.forEach(
       (score) => {
         if (
-          score.month ===
-            null ||
-          score.year ===
-            null ||
-          score.value ===
-            null ||
-          score.value ===
-            ""
+          score.month === null ||
+          score.year === null ||
+          score.value === null ||
+          score.value === ""
         ) {
           return;
         }
 
-        const key = monthKey(
-          score.month,
-          score.year
-        );
+        const numericValue =
+          Number(score.value);
+
+        if (
+          Number.isNaN(
+            numericValue
+          )
+        ) {
+          return;
+        }
+
+        const key =
+          monthKey(
+            score.month,
+            score.year
+          );
 
         if (
           !monthMap.has(key)
         ) {
-          monthMap.set(key, {
-            month:
-              Number(
-                score.month
-              ),
-            year:
-              Number(
-                score.year
-              ),
-          });
+          monthMap.set(
+            key,
+            {
+              month:
+                Number(
+                  score.month
+                ),
+              year:
+                Number(
+                  score.year
+                ),
+            }
+          );
         }
       }
     );
 
     // ------------------------------------------------
-    // Sort available months
-    // Newest first
+    // Sort newest first
     // ------------------------------------------------
 
     const sortedMonths =
@@ -421,12 +632,11 @@ function Dashboard() {
     );
 
     // ------------------------------------------------
-    // If there are no scored months
+    // No scored months
     // ------------------------------------------------
 
     if (
-      sortedMonths.length ===
-      0
+      sortedMonths.length === 0
     ) {
       setScores([]);
       return;
@@ -434,7 +644,6 @@ function Dashboard() {
 
     // ------------------------------------------------
     // Make sure From and To are valid
-    // for the selected member
     // ------------------------------------------------
 
     const availableKeys =
@@ -467,8 +676,7 @@ function Dashboard() {
       );
 
     // ------------------------------------------------
-    // If current To date has no data,
-    // use the newest available month
+    // If To doesn't exist, use newest available month
     // ------------------------------------------------
 
     if (
@@ -481,10 +689,8 @@ function Dashboard() {
     }
 
     // ------------------------------------------------
-    // If current From date has no data,
-    // find the oldest available month that
-    // is still within the intended range.
-    // Otherwise use the oldest available month.
+    // If From doesn't exist, use the oldest
+    // available month within the range.
     // ------------------------------------------------
 
     if (
@@ -533,7 +739,7 @@ function Dashboard() {
     }
 
     // ------------------------------------------------
-    // Only update state if necessary
+    // Update date state only if necessary
     // ------------------------------------------------
 
     if (
@@ -584,6 +790,13 @@ function Dashboard() {
     const filteredScores =
       memberScores.filter(
         (score) => {
+          if (
+            score.month === null ||
+            score.year === null
+          ) {
+            return false;
+          }
+
           const scoreKey =
             monthKey(
               score.month,
@@ -605,10 +818,7 @@ function Dashboard() {
   }
 
   // --------------------------------------------------
-  // Generate available month options
-  //
-  // Only months with a score for the selected member
-  // are displayed.
+  // Generate month options
   // --------------------------------------------------
 
   function generateAvailableMonthOptions() {
@@ -661,6 +871,38 @@ function Dashboard() {
     generateAvailableMonthOptions();
 
   // --------------------------------------------------
+  // Handle Team Lead change
+  // --------------------------------------------------
+
+  function handleTeamLeadChange(
+    event
+  ) {
+    const newTeamLead =
+      event.target.value;
+
+    setSelectedTeamLead(
+      newTeamLead
+    );
+
+    // Whenever the Team Lead changes,
+    // reset the member selection to
+    // All Team Members.
+    setSelectedMember("");
+  }
+
+  // --------------------------------------------------
+  // Handle member change
+  // --------------------------------------------------
+
+  function handleMemberChange(
+    event
+  ) {
+    setSelectedMember(
+      event.target.value
+    );
+  }
+
+  // --------------------------------------------------
   // Handle From dropdown
   // --------------------------------------------------
 
@@ -681,10 +923,6 @@ function Dashboard() {
       year:
         Number(year),
     };
-
-    // ----------------------------------------------
-    // Prevent From from being later than To
-    // ----------------------------------------------
 
     if (
       monthKey(
@@ -728,10 +966,6 @@ function Dashboard() {
         Number(year),
     };
 
-    // ----------------------------------------------
-    // Prevent To from being earlier than From
-    // ----------------------------------------------
-
     if (
       monthKey(
         newToDate.month,
@@ -753,7 +987,7 @@ function Dashboard() {
   }
 
   // --------------------------------------------------
-  // Current value for dropdown
+  // Current value for date dropdown
   // --------------------------------------------------
 
   function getDateValue(
@@ -787,6 +1021,49 @@ function Dashboard() {
     return (
       selected?.name || ""
     );
+  }
+
+  // --------------------------------------------------
+  // Get selection description
+  // --------------------------------------------------
+
+  function getSelectionDescription() {
+    if (
+      role === "User"
+    ) {
+      return currentMember?.name
+        ? `Viewing performance for ${currentMember.name}.`
+        : "";
+    }
+
+    if (
+      role === "Super Admin"
+    ) {
+      if (selectedMember) {
+        return `Viewing performance for ${getSelectedMemberName()}.`;
+      }
+
+      if (selectedTeamLead) {
+        const teamLead =
+          members.find(
+            (member) =>
+              member.member_id ===
+              selectedTeamLead
+          );
+
+        return `Viewing team performance for ${teamLead?.name || "selected Team Lead"}.`;
+      }
+
+      return "Viewing performance for all members.";
+    }
+
+    if (
+      selectedMember
+    ) {
+      return `Viewing performance for ${getSelectedMemberName()}.`;
+    }
+
+    return "";
   }
 
   // --------------------------------------------------
@@ -856,6 +1133,12 @@ function Dashboard() {
     role === "Admin" ||
     role === "Super Admin";
 
+  const isSuperAdmin =
+    role === "Super Admin";
+
+  const isUser =
+    role === "User";
+
   // --------------------------------------------------
   // Date validation
   // --------------------------------------------------
@@ -869,6 +1152,13 @@ function Dashboard() {
       toDate.month,
       toDate.year
     );
+
+  // --------------------------------------------------
+  // Determine whether there is a selection
+  // --------------------------------------------------
+
+  const hasSelection =
+    selectedMemberIds.length > 0;
 
   // --------------------------------------------------
   // Dashboard
@@ -902,7 +1192,7 @@ function Dashboard() {
       {/* REGULAR USER WELCOME */}
       {/* ------------------------------------------ */}
 
-      {!isAdmin &&
+      {isUser &&
         currentMember && (
           <div className="dashboard-welcome">
 
@@ -925,11 +1215,55 @@ function Dashboard() {
 
       <div
         className={`dashboard-filter-card ${
-          isAdmin
-            ? ""
-            : "dashboard-filter-card-user"
+          isUser
+            ? "dashboard-filter-card-user"
+            : ""
         }`}
       >
+
+        {/* -------------------------------------- */}
+        {/* TEAM LEAD - SUPER ADMIN ONLY */}
+        {/* -------------------------------------- */}
+
+        {isSuperAdmin && (
+          <div className="dashboard-filter-field">
+
+            <label>
+              Select Team Lead
+            </label>
+
+            <select
+              value={
+                selectedTeamLead
+              }
+              onChange={
+                handleTeamLeadChange
+              }
+            >
+
+              <option value="">
+                All Members
+              </option>
+
+              {teamLeadOptions.map(
+                (teamLead) => (
+                  <option
+                    key={
+                      teamLead.member_id
+                    }
+                    value={
+                      teamLead.member_id
+                    }
+                  >
+                    {teamLead.name}
+                  </option>
+                )
+              )}
+
+            </select>
+
+          </div>
+        )}
 
         {/* -------------------------------------- */}
         {/* MEMBER */}
@@ -946,20 +1280,21 @@ function Dashboard() {
               value={
                 selectedMember
               }
-              onChange={(
-                event
-              ) =>
-                setSelectedMember(
-                  event.target.value
-                )
+              onChange={
+                handleMemberChange
               }
             >
 
               <option value="">
-                Select Member
+                {isSuperAdmin
+                  ? "All Team Members"
+                  : "Select Member"}
               </option>
 
-              {members.map(
+              {(isSuperAdmin
+                ? superAdminMemberOptions
+                : members
+              ).map(
                 (member) => (
                   <option
                     key={
@@ -991,7 +1326,7 @@ function Dashboard() {
 
           <select
             value={
-              selectedMember &&
+              hasSelection &&
               monthOptions.length > 0
                 ? getDateValue(
                     fromDate
@@ -1002,12 +1337,12 @@ function Dashboard() {
               handleFromChange
             }
             disabled={
-              !selectedMember ||
+              !hasSelection ||
               monthOptions.length === 0
             }
           >
 
-            {!selectedMember ? (
+            {!hasSelection ? (
               <option value="">
                 Select Member First
               </option>
@@ -1049,7 +1384,7 @@ function Dashboard() {
 
           <select
             value={
-              selectedMember &&
+              hasSelection &&
               monthOptions.length > 0
                 ? getDateValue(
                     toDate
@@ -1060,12 +1395,12 @@ function Dashboard() {
               handleToChange
             }
             disabled={
-              !selectedMember ||
+              !hasSelection ||
               monthOptions.length === 0
             }
           >
 
-            {!selectedMember ? (
+            {!hasSelection ? (
               <option value="">
                 Select Member First
               </option>
@@ -1101,7 +1436,7 @@ function Dashboard() {
       {/* NO SCORES */}
       {/* ------------------------------------------ */}
 
-      {selectedMember &&
+      {hasSelection &&
         availableMonths.length ===
           0 && (
           <div className="dashboard-no-data">
@@ -1113,7 +1448,7 @@ function Dashboard() {
             <p>
               There are currently no
               KPI scores recorded for
-              this IS member.
+              this selection.
             </p>
 
           </div>
@@ -1123,7 +1458,7 @@ function Dashboard() {
       {/* INVALID DATE RANGE */}
       {/* ------------------------------------------ */}
 
-      {selectedMember &&
+      {hasSelection &&
         availableMonths.length >
           0 &&
         !validDateRange && (
@@ -1136,18 +1471,15 @@ function Dashboard() {
         )}
 
       {/* ------------------------------------------ */}
-      {/* SELECTED MEMBER */}
+      {/* SELECTED MEMBER / TEAM */}
       {/* ------------------------------------------ */}
 
-      {isAdmin &&
-        selectedMember && (
+      {hasSelection &&
+        availableMonths.length >
+          0 && (
           <div className="dashboard-selected-member">
 
-            Viewing performance for{" "}
-
-            <strong>
-              {getSelectedMemberName()}
-            </strong>
+            {getSelectionDescription()}
 
           </div>
         )}
@@ -1156,8 +1488,8 @@ function Dashboard() {
       {/* NO MEMBER SELECTED */}
       {/* ------------------------------------------ */}
 
-      {isAdmin &&
-        !selectedMember && (
+      {!hasSelection &&
+        !isUser && (
           <div className="dashboard-no-member">
 
             <div className="dashboard-no-member-icon">
@@ -1170,8 +1502,7 @@ function Dashboard() {
 
             <p>
               Select an IS member above
-              to view their KPI
-              performance.
+              to view KPI performance.
             </p>
 
           </div>
@@ -1181,7 +1512,7 @@ function Dashboard() {
       {/* KPI CHARTS */}
       {/* ------------------------------------------ */}
 
-      {selectedMember &&
+      {hasSelection &&
         availableMonths.length >
           0 &&
         validDateRange && (
@@ -1229,11 +1560,26 @@ function Dashboard() {
                             scores={
                               kpiScores
                             }
+                            allScores={
+                              scores
+                            }
+                            members={
+                              members
+                            }
+                            selectedMemberIds={
+                              selectedMemberIds
+                            }
                             fromDate={
                               fromDate
                             }
                             toDate={
                               toDate
+                            }
+                            showTable={
+                              !isUser
+                            }
+                            isTeamView={
+                              isTeamView
                             }
                           />
                         );
@@ -1313,11 +1659,26 @@ function Dashboard() {
                             scores={
                               kpiScores
                             }
+                            allScores={
+                              scores
+                            }
+                            members={
+                              members
+                            }
+                            selectedMemberIds={
+                              selectedMemberIds
+                            }
                             fromDate={
                               fromDate
                             }
                             toDate={
                               toDate
+                            }
+                            showTable={
+                              !isUser
+                            }
+                            isTeamView={
+                              isTeamView
                             }
                           />
                         );
@@ -1329,25 +1690,12 @@ function Dashboard() {
               </div>
 
             ) : (
-              kpis.filter(
-                (kpi) =>
-                  String(
-                    kpi.status || ""
-                  ).toLowerCase() !==
-                    "priority" &&
-                  String(
-                    kpi.status || ""
-                  ).toLowerCase() !==
-                    "hidden"
-              ).length ===
-                0 && (
-                <div className="dashboard-no-data">
+              <div className="dashboard-no-data">
 
-                  No active KPIs are
-                  currently available.
+                No active KPIs are
+                currently available.
 
-                </div>
-              )
+              </div>
             )}
 
           </section>
